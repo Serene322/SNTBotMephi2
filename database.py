@@ -17,7 +17,7 @@ def CreateDataBase():
                         phone_number INTEGER UNIQUE,
                         email TEXT UNIQUE NULL,
                         password TEXT,
-                        access_level INTEGER,
+                        access_level BOOLEAN,
                         telegram_id TEXT UNIQUE)''')
 
     # Создаем таблицу votes
@@ -29,6 +29,7 @@ def CreateDataBase():
                         is_in_person BOOLEAN,
                         is_closed BOOLEAN,
                         is_visible_in_progress BOOLEAN,
+                        is_finished BOOLEAN,
                         start_time DATETIME,
                         end_time DATETIME)''')
 
@@ -101,4 +102,10 @@ def CreateDataBase():
     # Закрываем соединение
     conn.close()
 
-CreateDataBase()
+
+def get_db_connection():
+    with sqlite3.connect('your_database.sql') as conn:
+        return conn
+
+
+#CreateDataBase()
