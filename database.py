@@ -1,5 +1,10 @@
 import sqlite3
+from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 
+
+engine = create_async_engine(url='your_database.sql')
+
+async_session = async_sessionmaker(engine)
 
 def CreateDataBase():
     # Создаем соединение с базой данных
