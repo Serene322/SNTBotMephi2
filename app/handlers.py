@@ -21,13 +21,13 @@ async def cmd_start(message: Message, state: FSMContext):
     await state.set_state(Reg.email)
     await message.answer('Здравствуйте!')
     await message.answer('Для начала работы вам необходимо зарегистрироваться.')
-    await message.answer('Укажите ваш email')
     # await rq.set_user(message.from_user.id)
     # await message.reply('sadasdsa',
     #                     reply_markup=kb.main)
 
 @router.message(Reg.email)
 async def reg_first_step(message: Message, state: FSMContext):
+    await message.answer('Укажите ваш email')
     await state.update_data(name=message.text)
     await state.set_state(Reg.password)
     await message.answer('Введите пароль')
@@ -41,7 +41,9 @@ async def reg_check_password(message: Message, state: FSMContext):
         await rq.set_user(message.from_user.id)
         await message.answer('Авторизация прошла успешно')
         state.clear()
-            
+    else:
+        await message.answer('Ошибка во время автоматизации')
+        await state.set_state(Reg.email)
 
 
 @router.callback_query(F.data == '1')
