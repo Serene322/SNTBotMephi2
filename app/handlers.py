@@ -7,18 +7,41 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
 import app.keyboards as kb
+import app.database.requests as rq
 
 router = Router()
 
-class Test(StatesGroup):
-    name = State()
-    number = State()
+class Reg(StatesGroup):
+    email = State()
+    password = State()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
-    await message.reply('sadasdsa',
-                        reply_markup=kb.main)
+async def cmd_start(message: Message, state: FSMContext):
+    await state.set_state(Reg.email)
+    await message.answer('Здравствуйте!')
+    await message.answer('Для начала работы вам необходимо зарегистрироваться.')
+    await message.answer('Укажите ваш email')
+    # await rq.set_user(message.from_user.id)
+    # await message.reply('sadasdsa',
+    #                     reply_markup=kb.main)
+
+@router.message(Reg.email)
+async def reg_first_step(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await state.set_state(Reg.password)
+    await message.answer('Введите пароль')
+
+@round.message(Reg.password)
+async def reg_check_password(message: Message, state: FSMContext):
+    await state.update_data(password=message.text)
+    data = await state.get_data()
+    answer = await rq.registration(data['email'], data['password'])
+    if answer == True:
+        await rq.set_user(message.from_user.id)
+        await message.answer('Авторизация прошла успешно')
+        state.clear()
+            
 
 
 @router.callback_query(F.data == '1')
