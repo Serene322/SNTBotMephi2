@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-
+import json
 from aiogram import F, Router
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
@@ -70,7 +70,7 @@ async def create_vote_start(message: Message):
 @router.callback_query(lambda c: c.data == "create_vote_start")
 async def create_vote_callback(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state(CreateVote.topic)
-    await state.update_data(is_finished=False)  # Устанавливаем is_finished в False
+    await state.update_data(is_finished=False, points=[])  # Инициализируем points как пустой список
     await callback_query.message.edit_text("Введите тему голосования:")
 
 
@@ -95,7 +95,6 @@ async def set_vote_description(message: Message, state: FSMContext):
     await message.answer("Введите дату начала голосования (в формате ГГГГ-ММ-ДД):")
 
 
-# Обработка ввода даты начала голосования
 @router.message(CreateVote.start_time)
 async def set_start_time(message: Message, state: FSMContext):
     date_text = message.text
@@ -129,8 +128,7 @@ async def handle_yes_no(callback_query: CallbackQuery, state: FSMContext):
     if current_state == CreateVote.is_in_person:
         await state.update_data(is_in_person=value)
         await state.set_state(CreateVote.is_closed)
-        await callback_query.message.edit_text("Голосование закрытое? (да/нет):",
-                                               reply_markup=kb.yes_no_keyboard)
+        await callback_query.message.edit_text("Голосование закрытое? (да/нет):", reply_markup=kb.yes_no_keyboard)
     elif current_state == CreateVote.is_closed:
         await state.update_data(is_closed=value)
         await state.set_state(CreateVote.is_visible_in_progress)
@@ -152,32 +150,41 @@ async def add_vote_point(message: Message, state: FSMContext):
 
     point_body = message.text
     point_id = await rq.add_point(vote_id, point_body)
-    await state.update_data(point_id=point_id)
-    await state.set_state(CreateVote.add_option)
-    await message.answer("Введите первый вариант ответа для данного пункта:", reply_markup=kb.point_option_keyboard)
 
+    # Добавляем новый пункт в список points в состоянии и инициализируем пустой список options
+    points = data.get('points', [])
+    points.append({'point_id': point_id, 'body': point_body, 'options': []})
+    await state.update_data(points=points)
+
+    await state.set_state(CreateVote.add_option)
+    await message.answer("Введите первый вариант ответа для данного пункта:", reply_markup=None)
 
 @router.message(CreateVote.add_option)
 async def add_vote_option(message: Message, state: FSMContext):
     data = await state.get_data()
-    point_id = data['point_id']
+    point_id = data['points'][-1]['point_id']
     option_body = message.text
     await rq.add_option(point_id, option_body)
+
+    # Добавляем новый вариант ответа в последний пункт
+    points = data['points']
+    for point in points:
+        if point['point_id'] == point_id:
+            point['options'].append({'body': option_body})
+            break
+    await state.update_data(points=points)
+
     await message.answer("Введите следующий вариант ответа или выберите действие:",
                          reply_markup=kb.point_option_keyboard)
 
-
 @router.callback_query(lambda c: c.data == "add_option")
 async def add_another_option(callback_query: CallbackQuery):
-    await callback_query.message.edit_text("Введите следующий вариант ответа:",
-                                           reply_markup=kb.point_option_keyboard)
-
+    await callback_query.message.edit_text("Введите следующий вариант ответа:", reply_markup=kb.point_option_keyboard)
 
 @router.callback_query(lambda c: c.data == "add_point")
 async def add_another_point(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state(CreateVote.add_point)
     await callback_query.message.edit_text("Введите следующий пункт голосования:")
-
 
 @router.callback_query(lambda c: c.data == "finalize_vote")
 async def finalize_vote(callback_query: CallbackQuery, state: FSMContext):
@@ -185,16 +192,15 @@ async def finalize_vote(callback_query: CallbackQuery, state: FSMContext):
     data['is_finished'] = True
     await rq.save_vote(data, callback_query.from_user.id)
     await state.clear()
-    await callback_query.message.edit_text("Голосование завершено и сохранено.", reply_markup=None)
-
+    await callback_query.message.edit_text("Голосование завершено и сохранено.", reply_markup=kb.inline_main_menu)
 
 # Обработка кнопки "Проголосовать"
-@router.message(lambda message: message.text == "Проголосовать")
+@router.message(lambda message: message.text == "vo")
 async def vote_start(message: Message):
     await message.answer('Выберите голосование из списка:', reply_markup=kb.vote_menu)
 
 
 # Обработка кнопки "Личный кабинет"
-@router.message(lambda message: message.text == "Личный кабинет")
+@router.message(lambda c: c.data == "lc")
 async def personal_account(message: Message):
     await message.answer('Это ваш личный кабинет.')

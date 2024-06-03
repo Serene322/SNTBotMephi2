@@ -108,7 +108,8 @@ async def save_vote(data, telegram_id):
             session.add(point)
             await session.commit()
 
-            for option_data in point_data['options']:
+            options = point_data.get('options', [])
+            for option_data in options:
                 option = Option(body=option_data['body'], point_id=point.id)
                 session.add(option)
                 await session.commit()

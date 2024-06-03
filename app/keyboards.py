@@ -33,7 +33,6 @@ yes_no_keyboard = InlineKeyboardMarkup(inline_keyboard=[
 
 # Inline клавиатура для добавления пунктов и опций
 point_option_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Добавить ещё один вариант ответа", callback_data="add_option")],
     [InlineKeyboardButton(text="Добавить ещё один пункт голосования", callback_data="add_point")],
     [InlineKeyboardButton(text="Завершить создание голосования", callback_data="finalize_vote")]
 ])
@@ -65,3 +64,9 @@ point_option_keyboard = InlineKeyboardMarkup(inline_keyboard=[
 #     for element in test_list:
 #         keyboard.add(KeyboardButton(text=element))
 #     return keyboard.adjust(2).as_markup()
+
+inline_main_menu = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Личный кабинет", callback_data='lc')],
+    [InlineKeyboardButton(text="Создать голосование", callback_data='create_vote_start')],
+    [InlineKeyboardButton(text="Проголосовать",callback_data='vo')]
+])
