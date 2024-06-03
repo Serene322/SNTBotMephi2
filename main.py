@@ -5,7 +5,7 @@ from Models.Point import Point
 from Models.Vote import Vote
 import sqlite3
 
-
+# УСТАРЕВШИЙ КОД, ЭТОТ ФАЙЛ НЕ СМОТРИТЕ
 def input_client_data():
     first_name = input("Введите имя: ")
     second_name = input("Введите фамилию: ")
