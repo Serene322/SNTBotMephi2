@@ -62,16 +62,15 @@ async def reg_check_password(message: Message, state: FSMContext):
         await message.answer('Укажите ваш email')
 
 
-# Обработка кнопки "Создать голосование"
 @router.message(F.text == "Создать голосование")
 async def create_vote_start(message: Message):
     await message.answer('Вы находитесь в меню создания голосования.', reply_markup=kb.create_vote_menu)
 
 
-# Обработка callback от кнопки "Начать создание голосования"
 @router.callback_query(lambda c: c.data == "create_vote_start")
 async def create_vote_callback(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state(CreateVote.topic)
+    await state.update_data(is_finished=False)  # Устанавливаем is_finished в False
     await callback_query.message.edit_text("Введите тему голосования:")
 
 
@@ -82,7 +81,6 @@ async def cancel_create_vote(callback_query: CallbackQuery, state: FSMContext):
     await state.clear()
 
 
-# Пошаговая обработка создания голосования
 @router.message(CreateVote.topic)
 async def set_vote_topic(message: Message, state: FSMContext):
     await state.update_data(topic=message.text)
@@ -90,7 +88,6 @@ async def set_vote_topic(message: Message, state: FSMContext):
     await message.answer("Введите описание голосования:")
 
 
-# Обработка ввода описания голосования
 @router.message(CreateVote.description)
 async def set_vote_description(message: Message, state: FSMContext):
     await state.update_data(description=message.text)
@@ -132,11 +129,13 @@ async def handle_yes_no(callback_query: CallbackQuery, state: FSMContext):
     if current_state == CreateVote.is_in_person:
         await state.update_data(is_in_person=value)
         await state.set_state(CreateVote.is_closed)
-        await callback_query.message.edit_text("Голосование закрытое? (да/нет):", reply_markup=kb.yes_no_keyboard)
+        await callback_query.message.edit_text("Голосование закрытое? (да/нет):",
+                                               reply_markup=kb.yes_no_keyboard)
     elif current_state == CreateVote.is_closed:
         await state.update_data(is_closed=value)
         await state.set_state(CreateVote.is_visible_in_progress)
-        await callback_query.message.edit_text("Информация видна в процессе? (да/нет):", reply_markup=kb.yes_no_keyboard)
+        await callback_query.message.edit_text("Информация видна в процессе? (да/нет):",
+                                               reply_markup=kb.yes_no_keyboard)
     elif current_state == CreateVote.is_visible_in_progress:
         await state.update_data(is_visible_in_progress=value)
         await state.set_state(CreateVote.add_point)
@@ -148,7 +147,7 @@ async def add_vote_point(message: Message, state: FSMContext):
     data = await state.get_data()
     vote_id = data.get('vote_id')
     if not vote_id:
-        vote_id = await rq.create_vote(data)
+        vote_id = await rq.create_vote(data, message.from_user.id)
         await state.update_data(vote_id=vote_id)
 
     point_body = message.text
@@ -164,12 +163,14 @@ async def add_vote_option(message: Message, state: FSMContext):
     point_id = data['point_id']
     option_body = message.text
     await rq.add_option(point_id, option_body)
-    await message.answer("Введите следующий вариант ответа или выберите действие:", reply_markup=kb.point_option_keyboard)
+    await message.answer("Введите следующий вариант ответа или выберите действие:",
+                         reply_markup=kb.point_option_keyboard)
 
 
 @router.callback_query(lambda c: c.data == "add_option")
 async def add_another_option(callback_query: CallbackQuery):
-    await callback_query.message.edit_text("Введите следующий вариант ответа:", reply_markup=kb.point_option_keyboard)
+    await callback_query.message.edit_text("Введите следующий вариант ответа:",
+                                           reply_markup=kb.point_option_keyboard)
 
 
 @router.callback_query(lambda c: c.data == "add_point")
@@ -182,76 +183,9 @@ async def add_another_point(callback_query: CallbackQuery, state: FSMContext):
 async def finalize_vote(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     data['is_finished'] = True
-    await rq.save_vote(data)
+    await rq.save_vote(data, callback_query.from_user.id)
     await state.clear()
     await callback_query.message.edit_text("Голосование завершено и сохранено.", reply_markup=None)
-
-
-# # Обработка ответа на вопрос о типе голосования
-# @router.message(CreateVote.is_in_person)
-# async def set_is_in_person(message: Message, state: FSMContext):
-#     is_in_person = message.text.lower() in ['да', 'yes']
-#     await state.update_data(is_in_person=is_in_person)
-#     await state.set_state(CreateVote.is_closed)
-#     await message.answer("Голосование закрытое? (да/нет):")
-#
-#
-# # Обработка ответа на вопрос о закрытости голосования
-# @router.message(CreateVote.is_closed)
-# async def set_is_closed(message: Message, state: FSMContext):
-#     # Ваша логика для обработки ответа на вопрос о закрытости голосования
-#     is_closed = message.text.lower() in ['да', 'yes']
-#     await state.update_data(is_closed=is_closed)
-#     await state.set_state(CreateVote.is_visible_in_progress)
-#     await message.answer("Информация видна в процессе? (да/нет):")
-#
-#
-# # Обработка ответа на вопрос об отображении информации в процессе голосования
-# @router.message(CreateVote.is_visible_in_progress)
-# async def set_is_visible_in_progress(message: Message, state: FSMContext):
-#     # Ваша логика для обработки ответа на вопрос об отображении информации в процессе голосования
-#     is_visible_in_progress = message.text.lower() in ['да', 'yes']
-#     await state.update_data(is_visible_in_progress=is_visible_in_progress)
-#
-#     data = await state.get_data()
-#     vote_data = {
-#         'creator_id': message.from_user.id,
-#         'topic': data['topic'],
-#         'description': data['description'],
-#         'is_in_person': data['is_in_person'],
-#         'is_closed': data['is_closed'],
-#         'is_visible_in_progress': is_visible_in_progress,
-#         'is_finished': False,
-#         'start_time': data['start_time'],
-#         'end_time': data['end_time']
-#     }
-#
-#     vote_id = await rq.create_vote(vote_data)
-#     await state.update_data(vote_id=vote_id)
-#     await state.set_state(CreateVote.add_point)
-#     await message.answer("Введите первый пункт голосования:")
-
-
-# Обработка добавления пункта голосования
-# @router.message(CreateVote.add_point)
-# async def add_vote_point(message: Message, state: FSMContext):
-#     data = await state.get_data()
-#     vote_id = data['vote_id']
-#     point_body = message.text
-#     point_id = await rq.add_point(vote_id, point_body)
-#     await state.update_data(point_id=point_id)
-#     await state.set_state(CreateVote.add_option)
-#     await message.answer("Введите первый вариант ответа для данного пункта:")
-#
-#
-# # Обработка добавления варианта ответа
-# @router.message(CreateVote.add_option)
-# async def add_vote_option(message: Message, state: FSMContext):
-#     data = await state.get_data()
-#     point_id = data['point_id']
-#     option_body = message.text
-#     await rq.add_option(point_id, option_body)
-#     await message.answer("Введите следующий вариант ответа или завершите добавление пунктов.")
 
 
 # Обработка кнопки "Проголосовать"
