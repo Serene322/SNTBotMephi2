@@ -89,27 +89,113 @@ async def save_vote(data, telegram_id):
 
         creator_id = user.id
 
-        vote = Vote(
-            creator_id=creator_id,
-            topic=data['topic'],
-            description=data.get('description', None),
-            is_in_person=data['is_in_person'],
-            is_closed=data['is_closed'],
-            is_visible_in_progress=data['is_visible_in_progress'],
-            is_finished=data['is_finished'],
-            start_time=data['start_time'],
-            end_time=data['end_time']
-        )
-        session.add(vote)
+        vote = await session.scalar(select(Vote).where(Vote.creator_id == creator_id).where(Vote.topic == data['topic']))
+        if vote:
+            vote.description = data.get('description', vote.description)
+            vote.is_in_person = data['is_in_person']
+            vote.is_closed = data['is_closed']
+            vote.is_visible_in_progress = data['is_visible_in_progress']
+            vote.is_finished = data['is_finished']
+            vote.start_time = data['start_time']
+            vote.end_time = data['end_time']
+        else:
+            vote = Vote(
+                creator_id=creator_id,
+                topic=data['topic'],
+                description=data.get('description', None),
+                is_in_person=data['is_in_person'],
+                is_closed=data['is_closed'],
+                is_visible_in_progress=data['is_visible_in_progress'],
+                is_finished=data['is_finished'],
+                start_time=data['start_time'],
+                end_time=data['end_time']
+            )
+            session.add(vote)
+
         await session.commit()
 
-        for point_data in data['points']:
-            point = Point(body=point_data['body'], vote_id=vote.id)
-            session.add(point)
-            await session.commit()
-
-            options = point_data.get('options', [])
-            for option_data in options:
-                option = Option(body=option_data['body'], point_id=point.id)
-                session.add(option)
+        if not vote.is_finished:
+            for point_data in data['points']:
+                point = Point(body=point_data['body'], vote_id=vote.id)
+                session.add(point)
                 await session.commit()
+
+                options = point_data.get('options', [])
+                for option_data in options:
+                    option = Option(body=option_data['body'], point_id=point.id)
+                    session.add(option)
+                    await session.commit()
+
+#Запрос для получения незавершённых голосований
+async def get_unfinished_votes(telegram_id: int):
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
+        if not user:
+            return []
+
+        votes = await session.scalars(select(Vote).where(Vote.creator_id == user.id, Vote.is_finished == False))
+        return [{'id': vote.id, 'topic': vote.topic} for vote in votes]
+
+#Запрос для получения информации голосования
+async def get_vote_details(vote_id: int):
+    async with async_session() as session:
+        vote = await session.scalar(select(Vote).where(Vote.id == vote_id))
+        if not vote:
+            return None
+
+        return {
+            'id': vote.id,
+            'topic': vote.topic,
+            'description': vote.description,
+            'start_time': vote.start_time.strftime('%Y-%m-%d'),
+            'end_time': vote.end_time.strftime('%Y-%m-%d'),
+            'is_in_person': vote.is_in_person,
+            'is_closed': vote.is_closed,
+            'is_visible_in_progress': vote.is_visible_in_progress
+        }
+
+
+#Запросы для обновления полей голосования
+async def update_vote_topic(vote_id: int, new_topic: str):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(topic=new_topic))
+        await session.commit()
+
+async def update_vote_description(vote_id: int, new_description: str):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(description=new_description))
+        await session.commit()
+
+async def update_vote_is_in_person(vote_id: int, new_is_in_person: bool):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(is_in_person=new_is_in_person))
+        await session.commit()
+
+async def update_vote_is_closed(vote_id: int, new_is_closed: bool):
+     async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(is_closed=new_is_closed))
+        await session.commit()
+
+async def update_vote_is_visible_in_progress(vote_id: int, new_is_visible_in_progress: bool):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(is_visible_in_progress=new_is_visible_in_progress))
+        await session.commit()
+
+async def update_vote_is_finished(vote_id: int, new_is_finished: bool):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(is_finished=new_is_finished))
+        await session.commit()
+
+
+
+'''Добавление смены времени не понял как должно работать
+async def update_vote_start_time(vote_id: int, new_start_time: DateTime):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(start_time=new_start_time))
+        await session.commit()
+
+async def update_vote_end_time(vote_id: int, new_end_time: date):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(end_time=new_end_time))
+        await session.commit()
+'''
