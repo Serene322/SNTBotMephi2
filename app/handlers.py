@@ -250,6 +250,7 @@ async def personal_account(message: Message):
 '''
 
 #Дальше всё для Редактирования черновиков
+#Кнопка изменить для РЕПЛАЙ-клавиатуры
 @router.message(F.text == "Изменить голосование")
 async def change_vote_start(message: Message):
     votes = await rq.get_unfinished_votes(message.from_user.id)
@@ -261,6 +262,20 @@ async def change_vote_start(message: Message):
         [InlineKeyboardButton(text=vote['topic'], callback_data=f"edit_vote_{vote['id']}")] for vote in votes
     ])
     await message.answer('Выберите голосование для изменения:', reply_markup=keyboard)
+
+#Кнопка изменить для ИНЛАЙН-клавиатуры
+@router.callback_query(lambda c: c.data == "change")
+async def inline_change_vote_start(callback_query: CallbackQuery):
+    votes = await rq.get_unfinished_votes(callback_query.from_user.id)
+    if not votes:
+        await callback_query.answer('Нет доступных голосований для изменения.')
+        return
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=vote['topic'], callback_data=f"edit_vote_{vote['id']}")] for vote in votes
+    ])
+    await callback_query.message.edit_text('Выберите голосование для изменения:', reply_markup=keyboard)
+
 
 #Обработчик для выбора голосования и отображения его данных
 # Добавим функцию для обработки редактирования голосования
