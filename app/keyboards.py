@@ -1,5 +1,5 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-
+import app.database.requests as rq
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 
@@ -48,15 +48,18 @@ stop_vote_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Сохранить", callback_data="create_vote_save")]
 ])
 
-
 # Инлайн-клавиатура для меню, потому что не знаю как с кодом связать реплай-клавиатуру
 inline_main_menu = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Личный кабинет", callback_data='lc')],
     [InlineKeyboardButton(text="Создать голосование", callback_data='create_vote_start')],
-    [InlineKeyboardButton(text="Проголосовать",callback_data='vo')],
+    [InlineKeyboardButton(text="Проголосовать",callback_data='vote')],
     [InlineKeyboardButton(text="Изменить голосование",callback_data='change')]
 ])
 
+add_another_point_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Добавить ещё пункт", callback_data="add_point")],
+    [InlineKeyboardButton(text="Завершить голосование", callback_data="finalize_vote")]
+])
 
 # Динамическая клавиатура, отображающая кнопки-голосования
 async def create_vote_keyboard(votes: list) -> InlineKeyboardMarkup:
@@ -71,29 +74,9 @@ edit_vote_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Изменить тип голосования", callback_data="edit_is_in_person")],
     [InlineKeyboardButton(text="Изменить закрытость голосования", callback_data="edit_is_closed")],
     [InlineKeyboardButton(text="Изменить видимость в процессе", callback_data="edit_is_visible_in_progress")],
-    [InlineKeyboardButton(text="Добавить/изменить пункты", callback_data="edit_points")]
+    [InlineKeyboardButton(text="Добавить пункты", callback_data="edit_points")],
+    [InlineKeyboardButton(text="Сделать голосование готовым", callback_data="edit_is_finished")],
+    [InlineKeyboardButton(text="Выход", callback_data="create_vote_cancel")]
 ])
 
-
-
-
-# main = ReplyKeyboardMarkup(keyboard=[
-#     [KeyboardButton(text='создать голосование')],
-#     [KeyboardButton(text='Личный кабинет')]
-# ])
-#
-# inline_main = InlineKeyboardMarkup(inline_keyboard=[
-#     [InlineKeyboardButton(text='создать голосование', callback_data='1')],
-#     [InlineKeyboardButton(text='Личный кабинет', callback_data='2')]
-# ])
-#
-#
-# test_list = []
-#
-#
-# async def reply_something():
-#     keyboard = ReplyKeyboardBuilder()
-#     for element in test_list:
-#         keyboard.add(KeyboardButton(text=element))
-#     return keyboard.adjust(2).as_markup()
 

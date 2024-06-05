@@ -66,19 +66,40 @@ async def save_incomplete_vote(data, telegram_id):
 
         creator_id = user.id
 
-        vote = Vote(
-            creator_id=creator_id,
-            topic=data['topic'],
-            description=data.get('description', None),
-            start_time=data['start_time'],
-            end_time=data['end_time'],
-            is_in_person=data['is_in_person'],
-            is_closed=data['is_closed'],
-            is_visible_in_progress=data['is_visible_in_progress'],
-            is_finished=False
-        )
-        session.add(vote)
-        await session.commit()
+        # Проверяем, существует ли уже голосование с такой же темой
+        existing_vote = await session.scalar(select(Vote).where(Vote.topic == data['topic']).where(Vote.creator_id == creator_id))
+        if existing_vote:
+            vote_id = existing_vote.id
+        else:
+            # Создаем новое голосование, если его еще нет
+            vote = Vote(
+                creator_id=creator_id,
+                topic=data['topic'],
+                description=data.get('description', None),
+                start_time=data['start_time'],
+                end_time=data['end_time'],
+                is_in_person=data['is_in_person'],
+                is_closed=data['is_closed'],
+                is_visible_in_progress=data['is_visible_in_progress'],
+                is_finished=False
+            )
+            session.add(vote)
+            await session.commit()
+            vote_id = vote.id
+
+        for point_data in data['points']:
+            # Проверяем, существует ли уже пункт с таким текстом в базе данных
+            existing_point = await session.scalar(select(Point).where(Point.vote_id == vote_id).where(Point.body == point_data['body']))
+            if not existing_point:
+                point = Point(body=point_data['body'], vote_id=vote_id)
+                session.add(point)
+                await session.commit()
+
+                options = point_data.get('options', [])
+                for option_data in options:
+                    option = Option(body=option_data['body'], point_id=point.id)
+                    session.add(option)
+                    await session.commit()
 
 
 async def save_vote(data, telegram_id):
@@ -185,6 +206,9 @@ async def update_vote_is_finished(vote_id: int, new_is_finished: bool):
     async with async_session() as session:
         await session.execute(update(Vote).where(Vote.id == vote_id).values(is_finished=new_is_finished))
         await session.commit()
+
+
+
 
 
 
