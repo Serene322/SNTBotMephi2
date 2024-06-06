@@ -1,3 +1,4 @@
+
 from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import CommandStart
@@ -73,7 +74,7 @@ async def create_vote_save(callback_query: CallbackQuery, state: FSMContext):
 @router.callback_query(lambda c: c.data == "create_vote_cancel")
 async def cancel_create_vote(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.answer('')
-    await callback_query.message.edit_text("Вы вышли в меню", reply_markup=kb.inline_main_menu)
+    await callback_query.message.edit_text("Создание голосования отменено.", reply_markup=kb.inline_main_menu)
     await state.clear()
 
 
@@ -174,6 +175,10 @@ async def handle_yes_no(callback_query: CallbackQuery, state: FSMContext):
 async def add_vote_point(message: Message, state: FSMContext):
     data = await state.get_data()
     vote_id = data.get('vote_id')
+    if not vote_id:
+        vote_id = await rq.create_vote(data, message.from_user.id)
+        await state.update_data(vote_id=vote_id)
+
     point_body = message.text
 
     # Проверяем, существует ли уже пункт с таким текстом в базе данных
@@ -191,11 +196,8 @@ async def add_vote_point(message: Message, state: FSMContext):
     points.append({'point_id': point_id, 'body': point_body, 'options': []})
     await state.update_data(points=points)
 
-    # После добавления пункта в черновик, вы можете запросить пользователя добавить дополнительные параметры
-    # или предложить другие действия
-    await message.answer("Пункт успешно добавлен.", reply_markup=kb.inline_main_menu)
-
-
+    await state.set_state(CreateVote.add_option)
+    await message.answer("Выберите действие:", reply_markup=kb.point_option_keyboard)
 
 
 @router.message(CreateVote.add_option)
@@ -296,23 +298,6 @@ async def edit_topic_start(callback_query: CallbackQuery, state: FSMContext):
 async def edit_description_start(callback_query: CallbackQuery, state: FSMContext):
     await state.set_state(CreateVote.description)
     await callback_query.message.edit_text("Введите новое описание голосования:", reply_markup=kb.stop_vote_keyboard)
-
-@router.callback_query(lambda c: c.data == "edit_points")
-async def edit_points(callback_query: CallbackQuery, state: FSMContext):
-    # Получаем текущие данные из состояния
-    data = await state.get_data()
-    points = data.get('points', [])
-
-        # Создаем новый пункт и добавляем его в список пунктов
-    new_point = {'point_id': None, 'body': "", 'options': []}
-    points.append(new_point)
-
-        # Обновляем данные в состоянии
-    await state.update_data(points=points)
-
-        # Отправляем сообщение с запросом на ввод текста для нового пункта
-    await callback_query.message.edit_text("Введите новый пункт голосования:", reply_markup=kb.stop_vote_keyboard)
-
     #FROM HERE
 @router.callback_query(lambda c: c.data == "edit_is_in_person")
 async def edit_is_in_person_start(callback_query: CallbackQuery, state: FSMContext):
@@ -358,25 +343,8 @@ async def edit_is_visible_in_progress(callback_query: CallbackQuery, state: FSMC
     # Изменяем клавиатуру в сообщении
     await callback_query.message.edit_reply_markup(reply_markup=kb.inline_main_menu)
 
-@router.callback_query(lambda c: c.data == "edit_is_finished")
-async def edit_is_finished(callback_query: CallbackQuery, state: FSMContext):
-    # Получаем текущее значение переменной
-    data = await state.get_data()
-    current_value = data.get('is_finished', False)  # Устанавливаем значение по умолчанию в False
-    new_value = not current_value  # Инвертируем текущее значение
-    # Сохраняем новое значение переменной в контексте состояния
-    await state.update_data(is_finished=new_value)
-    # Определяем текст сообщения в зависимости от нового значения переменной
-    message_text = "Вы закончили создание голосования." if new_value else "Вы закончили создание голосования."
-    await callback_query.message.edit_text(message_text)
-    # Изменяем клавиатуру в сообщении
-    await callback_query.message.edit_reply_markup(reply_markup=kb.inline_main_menu)
+
 
 @router.callback_query(lambda c: c.data == "to_inline_main_menu")
 async def to_inline_main_menu(callback_query: CallbackQuery, state: FSMContext):
     await edit_vote(callback_query, state)  # Запуск хэндлера edit_vote с текущими аргументами
-
-
-
-
-

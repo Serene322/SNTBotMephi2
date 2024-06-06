@@ -102,6 +102,10 @@ async def save_incomplete_vote(data, telegram_id):
                     await session.commit()
 
 
+
+
+
+
 async def save_vote(data, telegram_id):
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
@@ -206,6 +210,29 @@ async def update_vote_is_finished(vote_id: int, new_is_finished: bool):
     async with async_session() as session:
         await session.execute(update(Vote).where(Vote.id == vote_id).values(is_finished=new_is_finished))
         await session.commit()
+
+#ГОЛОСОВАНИЕ.
+
+async def save_vote_result(vote_id: int, chosen_option: str, user_id: int):
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        vote = await session.get(Vote, vote_id)
+        if not user or not vote:
+            return False
+
+        option = await session.scalar(select(Option).where(Option.point_id == vote.id).where(Option.body == chosen_option))
+        if not option:
+            return False
+
+        result = Result(client_id=user_id, point_id=vote.id, option_id=option.id)
+        session.add(result)
+        await session.commit()
+        return True
+
+async def get_vote_options(vote_id: int):
+    async with async_session() as session:
+        options = await session.scalars(select(Option.body).where(Option.point_id == vote_id))
+        return options
 
 
 
