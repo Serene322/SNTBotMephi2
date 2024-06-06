@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import CommandStart
@@ -348,3 +347,60 @@ async def edit_is_visible_in_progress(callback_query: CallbackQuery, state: FSMC
 @router.callback_query(lambda c: c.data == "to_inline_main_menu")
 async def to_inline_main_menu(callback_query: CallbackQuery, state: FSMContext):
     await edit_vote(callback_query, state)  # Запуск хэндлера edit_vote с текущими аргументами
+
+
+
+# Обработка кнопки "Проголосовать"
+@router.callback_query(lambda c: c.data == 'vote')
+async def show_votes(callback_query: CallbackQuery):
+    votes = await rq.get_active_votes()
+    if not votes:
+        await callback_query.message.edit_text('Нет доступных голосований.')
+        return
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=vote['topic'], callback_data=f"vote_{vote['id']}")] for vote in votes
+    ])
+    await callback_query.message.edit_text('Выберите голосование из списка:', reply_markup=keyboard)
+
+# Обработка выбора голосования
+@router.callback_query(lambda c: c.data.startswith('vote_'))
+async def show_vote_details(callback_query: CallbackQuery):
+    vote_id = int(callback_query.data.split('_')[1])
+    vote_data = await rq.get_vote_details(vote_id)
+
+    if not vote_data:
+        await callback_query.message.edit_text('Голосование не найдено.', reply_markup=kb.inline_main_menu)
+        return
+
+    details = (f"Тема: {vote_data['topic']}\n"
+               f"Описание: {vote_data['description']}\n"
+               f"Дата начала: {vote_data['start_time']}\n"
+               f"Дата окончания: {vote_data['end_time']}\n"
+               f"Очное голосование: {'Да' if vote_data['is_in_person'] else 'Нет'}\n"
+               f"Закрытое голосование: {'Да' if vote_data['is_closed'] else 'Нет'}\n"
+               f"Видимость в процессе: {'Да' if vote_data['is_visible_in_progress'] else 'Нет'}\n")
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="В меню", callback_data='to_inline_menu')]
+    ])
+    await callback_query.message.edit_text(details, reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data == "to_inline_menu")
+async def to_inline_menu(callback_query: CallbackQuery, state: FSMContext):
+    await callback_query.answer('')
+    await callback_query.message.edit_text("Возврат  в меню.", reply_markup=kb.inline_main_menu)
+
+#Для reply-кнопки
+@router.message(F.text =='Проголосовать')
+async def show_votes(message: Message):
+    votes = await rq.get_active_votes()
+    if not votes:
+        await message.answer('Нет доступных голосований.', reply_markup=kb.inline_main_menu)
+        return
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=vote['topic'], callback_data=f"vote_{vote['id']}")] for vote in votes
+    ])
+    await message.answer('Выберите голосование из списка:', reply_markup=keyboard)

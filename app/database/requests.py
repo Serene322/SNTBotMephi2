@@ -213,26 +213,10 @@ async def update_vote_is_finished(vote_id: int, new_is_finished: bool):
 
 #ГОЛОСОВАНИЕ.
 
-async def save_vote_result(vote_id: int, chosen_option: str, user_id: int):
+async def get_active_votes():
     async with async_session() as session:
-        user = await session.get(User, user_id)
-        vote = await session.get(Vote, vote_id)
-        if not user or not vote:
-            return False
-
-        option = await session.scalar(select(Option).where(Option.point_id == vote.id).where(Option.body == chosen_option))
-        if not option:
-            return False
-
-        result = Result(client_id=user_id, point_id=vote.id, option_id=option.id)
-        session.add(result)
-        await session.commit()
-        return True
-
-async def get_vote_options(vote_id: int):
-    async with async_session() as session:
-        options = await session.scalars(select(Option.body).where(Option.point_id == vote_id))
-        return options
+        votes = await session.scalars(select(Vote).where((Vote.is_finished == True) & (Vote.is_in_person == False)))
+        return [{'id': vote.id, 'topic': vote.topic} for vote in votes]
 
 
 
