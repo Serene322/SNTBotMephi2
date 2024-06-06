@@ -240,7 +240,12 @@ async def get_vote_details_with_points(vote_id):
 
             return vote, points
 
-
+# Функция для сохранения результата голосования в базе данных
+async def save_result(client_id: int, point_id: int, option_id: int):
+    async with async_session() as session:
+        result = Result(client_id=client_id, point_id=point_id, option_id=option_id)
+        session.add(result)
+        await session.commit()
 
 
 
