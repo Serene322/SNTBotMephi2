@@ -327,20 +327,40 @@ async def edit_is_closed(callback_query: CallbackQuery, state: FSMContext):
     # Изменяем клавиатуру в сообщении
     await callback_query.message.edit_reply_markup(reply_markup=kb.inline_main_menu)
 
-
-@router.callback_query(lambda c: c.data == "edit_is_visible_in_progress")
+@router.callback_query(lambda c: c.data.startswith("edit_is_visible_in_progress_"))
 async def edit_is_visible_in_progress(callback_query: CallbackQuery, state: FSMContext):
-    # Получаем текущее значение переменной
+    vote_id = int(callback_query.data.split("_")[-1])
+    await state.update_data(edit_vote_id=vote_id)
+    await edit_is_visible_in_progress_start(callback_query, state)
+# Update the edit_is_visible_in_progress_start function
+@router.callback_query(lambda c: c.data == "edit_is_visible_in_progress")
+async def edit_is_visible_in_progress_start(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    current_value = data.get('is_visible_in_progress', False)  # Устанавливаем значение по умолчанию в False
-    new_value = not current_value  # Инвертируем текущее значение
-    # Сохраняем новое значение переменной в контексте состояния
+    vote_id = data.get('edit_vote_id')
+    vote_data = await rq.get_vote_details(vote_id)
+
+    if not vote_data:
+        await callback_query.message.edit_text("Голосование не найдено.")
+        return
+
+    current_value = vote_data.get('is_visible_in_progress')  # Access the value using the key
+    if current_value is None:
+        await callback_query.message.edit_text("Информация о голосовании неполная.")
+        return
+
+    new_value = not current_value
+
+    # Update the value in the database
+    await rq.update_vote_visibility(vote_id, new_value)
+
+    # Update the value in the state
     await state.update_data(is_visible_in_progress=new_value)
-    # Определяем текст сообщения в зависимости от нового значения переменной
-    message_text = "Вы изменили тип голосования на видимый в процессе." if new_value else "Вы изменили тип голосования на скрытый в процессе."
+
+    # Inform the user about the change
+    message_text = "Голосование стало видимым в процессе." if new_value else "Голосование скрыто в процессе."
     await callback_query.message.edit_text(message_text)
-    # Изменяем клавиатуру в сообщении
     await callback_query.message.edit_reply_markup(reply_markup=kb.inline_main_menu)
+
 
 
 

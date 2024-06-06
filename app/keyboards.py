@@ -73,7 +73,7 @@ edit_vote_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Изменить описание", callback_data="edit_description")],
     [InlineKeyboardButton(text="Изменить тип голосования", callback_data="edit_is_in_person")],
     [InlineKeyboardButton(text="Изменить закрытость голосования", callback_data="edit_is_closed")],
-    [InlineKeyboardButton(text="Изменить видимость в процессе", callback_data="edit_is_visible_in_progress")],
+    [InlineKeyboardButton(text="Изменить видимость в процессе", callback_data=f"edit_is_visible_in_progress")],
     [InlineKeyboardButton(text="Добавить пункты", callback_data="edit_points")],
     [InlineKeyboardButton(text="Сделать голосование готовым", callback_data="edit_is_finished")],
     [InlineKeyboardButton(text="Выход", callback_data="create_vote_cancel")]
