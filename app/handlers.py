@@ -430,7 +430,6 @@ async def show_vote_details_message(callback_query: CallbackQuery, state: FSMCon
 
 
 # Функция для отображения следующего пункта голосования
-# Функция для отображения следующего пункта голосования
 @router.callback_query(lambda c: c.data == 'next_point')
 async def show_next_point(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -445,18 +444,41 @@ async def show_next_point(callback_query: CallbackQuery, state: FSMContext):
     # Получаем первый пункт из списка и удаляем его
     point = points.pop(0)
 
+    # Сохраняем обновленный список точек
+    await state.update_data(points=points)
+
     # Формируем текст сообщения для текущего пункта с выделением жирным шрифтом
     text = f"Вопрос:\n<b>{point.body}</b>\n\n"
 
-    # Отправляем сообщение с текущим пунктом и кнопкой "Продолжить"
+    # Создаем клавиатуру с тремя кнопками: "Да", "Нет", "Затрудняюсь ответить"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Продолжить", callback_data='next_point')]
+        [
+            InlineKeyboardButton(text="Да", callback_data='answer_yes'),
+            InlineKeyboardButton(text="Нет", callback_data='answer_no'),
+            InlineKeyboardButton(text="Затрудняюсь ответить", callback_data='answer_uncertain')
+        ]
     ])
+
+    # Отправляем сообщение с текущим пунктом и кнопками "Да", "Нет", "Затрудняюсь ответить"
     await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="html")
 
+# Обработка ответа "Да"
+@router.callback_query(lambda c: c.data == 'answer_yes')
+async def handle_answer_yes(callback_query: CallbackQuery, state: FSMContext):
+    # Здесь можно добавить логику обработки ответа "Да"
+    await show_next_point(callback_query, state)
 
+# Обработка ответа "Нет"
+@router.callback_query(lambda c: c.data == 'answer_no')
+async def handle_answer_no(callback_query: CallbackQuery, state: FSMContext):
+    # Здесь можно добавить логику обработки ответа "Нет"
+    await show_next_point(callback_query, state)
 
-
+# Обработка ответа "Затрудняюсь ответить"
+@router.callback_query(lambda c: c.data == 'answer_uncertain')
+async def handle_answer_uncertain(callback_query: CallbackQuery, state: FSMContext):
+    # Здесь можно добавить логику обработки ответа "Затрудняюсь ответить"
+    await show_next_point(callback_query, state)
 
 # Обработка кнопки "Продолжить"
 @router.callback_query(lambda c: c.data == 'next_point')
