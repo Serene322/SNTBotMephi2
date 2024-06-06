@@ -219,6 +219,38 @@ async def get_active_votes():
         return [{'id': vote.id, 'topic': vote.topic} for vote in votes]
 
 
+from sqlalchemy.future import select
+
+async def get_vote_details_with_points(vote_id):
+    async with async_session() as session:
+        async with session.begin():
+            # Получаем данные о голосовании
+            vote_result = await session.execute(select(Vote).where(Vote.id == vote_id))
+            vote = vote_result.fetchone()
+
+            if not vote:
+                return None, None  # Возвращаем None, если голосование не найдено
+
+            # Получаем связанные с голосованием точки
+            points_result = await session.execute(select(Point).where(Point.vote_id == vote_id))
+            points = points_result.all()
+
+            print("Vote:", vote)
+            print("Points:", points)
+
+            return vote, points
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

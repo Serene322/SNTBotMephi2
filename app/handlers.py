@@ -367,24 +367,33 @@ async def show_votes(callback_query: CallbackQuery):
 @router.callback_query(lambda c: c.data.startswith('vote_'))
 async def show_vote_details(callback_query: CallbackQuery):
     vote_id = int(callback_query.data.split('_')[1])
-    vote_data = await rq.get_vote_details(vote_id)
+    vote_data, points = await rq.get_vote_details_with_points(vote_id)
 
     if not vote_data:
         await callback_query.message.edit_text('Голосование не найдено.', reply_markup=kb.inline_main_menu)
         return
 
-    details = (f"Тема: {vote_data['topic']}\n"
-               f"Описание: {vote_data['description']}\n"
-               f"Дата начала: {vote_data['start_time']}\n"
-               f"Дата окончания: {vote_data['end_time']}\n"
-               f"Очное голосование: {'Да' if vote_data['is_in_person'] else 'Нет'}\n"
-               f"Закрытое голосование: {'Да' if vote_data['is_closed'] else 'Нет'}\n"
-               f"Видимость в процессе: {'Да' if vote_data['is_visible_in_progress'] else 'Нет'}\n")
+    vote = vote_data[0]
+    points = [point[0] for point in points]
+
+    details = (f"Тема: {vote.topic}\n"
+               f"Описание: {vote.description}\n"
+               f"Дата начала: {vote.start_time}\n"
+               f"Дата окончания: {vote.end_time}\n"
+               f"Очное голосование: {'Да' if vote.is_in_person else 'Нет'}\n"
+               f"Закрытое голосование: {'Да' if vote.is_closed else 'Нет'}\n"
+               f"Видимость в процессе: {'Да' if vote.is_visible_in_progress else 'Нет'}\n")
+
+    if points:
+        details += "Пункты голосования:\n"
+        for point in points:
+            details += f"{point.id}. {point.body}\n"
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="В меню", callback_data='to_inline_menu')]
     ])
     await callback_query.message.edit_text(details, reply_markup=keyboard)
+
 
 
 @router.callback_query(lambda c: c.data == "to_inline_menu")
