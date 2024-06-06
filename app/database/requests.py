@@ -213,10 +213,15 @@ async def update_vote_is_finished(vote_id: int, new_is_finished: bool):
 
 #ГОЛОСОВАНИЕ.
 
-async def get_active_votes():
+async def get_active_votes(user_id):
     async with async_session() as session:
         votes = await session.scalars(select(Vote).where((Vote.is_finished == True) & (Vote.is_in_person == False)))
-        return [{'id': vote.id, 'topic': vote.topic} for vote in votes]
+        active_votes = []
+        for vote in votes:
+            if not await has_user_completed_vote(user_id, vote.id):
+                active_votes.append({'id': vote.id, 'topic': vote.topic})
+        return active_votes
+
 
 
 from sqlalchemy.future import select
@@ -247,7 +252,13 @@ async def save_result(client_id: int, point_id: int, option_id: int):
         session.add(result)
         await session.commit()
 
-
+#Функция проверки, выполнил ли пользователь голосование
+async def has_user_completed_vote(user_id, vote_id):
+    async with async_session() as session:
+        result = await session.execute(
+            select(Result).join(Point).where(Result.client_id == user_id, Point.vote_id == vote_id)
+        )
+        return result.scalar() is not None
 
 
 

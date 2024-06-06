@@ -353,15 +353,19 @@ async def to_inline_main_menu(callback_query: CallbackQuery, state: FSMContext):
 # Обработка кнопки "Проголосовать"
 @router.callback_query(lambda c: c.data == 'vote')
 async def show_votes(callback_query: CallbackQuery):
-    votes = await rq.get_active_votes()
+    user_id = callback_query.from_user.id  # Получение user_id
+    votes = await rq.get_active_votes(user_id)  # Передача user_id в функцию
+
     if not votes:
-        await callback_query.message.edit_text('Нет доступных голосований.')
+        await callback_query.message.edit_text('Нет доступных голосований.', reply_markup=kb.inline_main_menu)
         return
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=vote['topic'], callback_data=f"vote_{vote['id']}")] for vote in votes
     ])
     await callback_query.message.edit_text('Выберите голосование из списка:', reply_markup=keyboard)
+
+
 
 # Обработка выбора голосования
 @router.callback_query(lambda c: c.data.startswith('vote_'))
