@@ -365,8 +365,12 @@ async def show_votes(callback_query: CallbackQuery):
 
 # Обработка выбора голосования
 @router.callback_query(lambda c: c.data.startswith('vote_'))
-async def show_vote_details(callback_query: CallbackQuery):
+async def show_vote_details(callback_query: CallbackQuery, state: FSMContext):
     vote_id = int(callback_query.data.split('_')[1])
+    await show_vote_details_by_id(callback_query, vote_id, state)
+
+# Функция для отображения деталей голосования по его идентификатору
+async def show_vote_details_by_id(callback_query: CallbackQuery, vote_id: int, state: FSMContext):
     vote_data, points = await rq.get_vote_details_with_points(vote_id)
 
     if not vote_data:
@@ -376,25 +380,50 @@ async def show_vote_details(callback_query: CallbackQuery):
     vote = vote_data[0]
     points = [point[0] for point in points]
 
-    details = (f"Тема: {vote.topic}\n"
-               f"Описание: {vote.description}\n"
-               f"Дата начала: {vote.start_time}\n"
-               f"Дата окончания: {vote.end_time}\n"
-               f"Очное голосование: {'Да' if vote.is_in_person else 'Нет'}\n"
-               f"Закрытое голосование: {'Да' if vote.is_closed else 'Нет'}\n"
-               f"Видимость в процессе: {'Да' if vote.is_visible_in_progress else 'Нет'}\n")
+    # Создаем данные о голосовании и связанных с ним точках
+    await state.update_data(vote=vote, points=points)
 
-    if points:
-        details += "Пункты голосования:\n"
-        for point in points:
-            details += f"{point.id}. {point.body}\n"
+    # Отображаем первый пункт голосования
+    await show_next_point(callback_query.message, state)
 
+# Функция для отображения следующего пункта голосования
+async def show_next_point(message: Message, state: FSMContext):
+    data = await state.get_data()
+    vote = data['vote']
+    points = data['points']
+
+    # Проверяем, есть ли еще точки для отображения
+    if not points:
+        await message.edit_text('Все пункты голосования показаны.', reply_markup=kb.inline_main_menu)
+        return
+
+    # Получаем первый пункт из списка и удаляем его
+    point = points.pop(0)
+
+    # Формируем текст сообщения для текущего пункта
+    text = f"Тема: {vote.topic}\n" \
+           f"Описание: {vote.description}\n" \
+           f"Дата начала: {vote.start_time}\n" \
+           f"Дата окончания: {vote.end_time}\n" \
+           f"Очное голосование: {'Да' if vote.is_in_person else 'Нет'}\n" \
+           f"Закрытое голосование: {'Да' if vote.is_closed else 'Нет'}\n" \
+           f"Видимость в процессе: {'Да' if vote.is_visible_in_progress else 'Нет'}\n" \
+           f"ID: {point.vote_id}\n" \
+           f"Описание: {point.body}\n"
+
+    # Отправляем сообщение с текущим пунктом и кнопкой "Продолжить"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="В меню", callback_data='to_inline_menu')]
+        [InlineKeyboardButton(text="Продолжить", callback_data='next_point')]
     ])
-    await callback_query.message.edit_text(details, reply_markup=keyboard)
+    await message.edit_text(text, reply_markup=keyboard)
 
 
+
+# Обработка кнопки "Продолжить"
+@router.callback_query(lambda c: c.data == 'next_point')
+async def continue_showing_points(callback_query: CallbackQuery, state: FSMContext):
+    # Получаем текущее сообщение и отображаем следующий пункт голосования
+    await show_next_point(callback_query.message, state)
 
 @router.callback_query(lambda c: c.data == "to_inline_menu")
 async def to_inline_menu(callback_query: CallbackQuery, state: FSMContext):
