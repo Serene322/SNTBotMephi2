@@ -202,15 +202,25 @@ async def update_vote_visibility(vote_id, new_value):
         return True  # Возвращаем True при успешном обновлении
 
 
-async def update_vote_is_closed(vote_id: int, new_is_closed: bool):
-     async with async_session() as session:
-        await session.execute(update(Vote).where(Vote.id == vote_id).values(is_closed=new_is_closed))
-        await session.commit()
-
-async def update_vote_is_visible_in_progress(vote_id: int, new_is_visible_in_progress: bool):
+async def update_vote_is_closed(vote_id, new_value):
     async with async_session() as session:
-        await session.execute(update(Vote).where(Vote.id == vote_id).values(is_visible_in_progress=new_is_visible_in_progress))
+        vote = await session.get(Vote, vote_id)
+        if vote is None:
+            return False  # Возвращаем False, если голосование не найдено
+
+        vote.is_closed = new_value
         await session.commit()
+        return True  # Возвращаем True при успешном обновлении
+
+async def update_vote_is_in_person(vote_id, new_value):
+    async with async_session() as session:
+        vote = await session.get(Vote, vote_id)
+        if vote is None:
+            return False  # Возвращаем False, если голосование не найдено
+
+        vote.is_in_person = new_value
+        await session.commit()
+        return True  # Возвращаем True при успешном обновлении
 
 async def update_vote_is_finished(vote_id: int, new_is_finished: bool):
     async with async_session() as session:

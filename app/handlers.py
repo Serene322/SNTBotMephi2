@@ -54,11 +54,13 @@ async def reg_check_password(message: Message, state: FSMContext):
         await message.answer('Укажите ваш email')
 
 @router.message(F.text == "Создать голосование")
-async def create_vote_start(message: Message):
+async def create_vote_start(message: Message, state: FSMContext):
+    await state.clear()  # Очищаем состояние перед началом нового голосования
     await message.answer('Вы находитесь в меню создания голосования.', reply_markup=kb.create_vote_menu)
 
 @router.callback_query(lambda c: c.data == "create_vote_start")
 async def create_vote_callback(callback_query: CallbackQuery, state: FSMContext):
+    await state.clear()  # Очищаем состояние перед началом нового голосования
     await state.set_state(CreateVote.topic)
     await state.update_data(description=None, is_in_person=0, is_closed=0, is_visible_in_progress=0, start_time=None, end_time=None, is_finished=False, points=[])
     await callback_query.message.edit_text("Введите тему голосования:", reply_markup=kb.stop_vote_keyboard)
@@ -298,41 +300,81 @@ async def edit_description_start(callback_query: CallbackQuery, state: FSMContex
     await state.set_state(CreateVote.description)
     await callback_query.message.edit_text("Введите новое описание голосования:", reply_markup=kb.stop_vote_keyboard)
     #FROM HERE
+@router.callback_query(lambda c: c.data.startswith("edit_is_in_person_"))
+async def edit_is_in_person(callback_query: CallbackQuery, state: FSMContext):
+    vote_id = int(callback_query.data.split("_")[-1])
+    await state.update_data(edit_vote_id=vote_id)
+    await edit_is_in_person_start(callback_query, state)
+
 @router.callback_query(lambda c: c.data == "edit_is_in_person")
 async def edit_is_in_person_start(callback_query: CallbackQuery, state: FSMContext):
-    # Получаем текущее значение переменной
     data = await state.get_data()
-    current_value = data.get('is_in_person', False)  # Устанавливаем значение по умолчанию в False
-    new_value = not current_value  # Инвертируем текущее значение
-    # Сохраняем новое значение переменной в контексте состояния
-    await state.update_data(is_in_person=new_value)
-    # Определяем текст сообщения в зависимости от нового значения переменной
-    message_text = "Вы изменили тип голосования на очное." if new_value else "Вы изменили тип голосования на неочное."
+    vote_id = data.get('edit_vote_id')
+    vote_data = await rq.get_vote_details(vote_id)
+
+    if not vote_data:
+        await callback_query.message.edit_text("Голосование не найдено.")
+        return
+
+    current_value = vote_data.get('is_in_person')
+    if current_value is None:
+        await callback_query.message.edit_text("Информация о голосовании неполная.")
+        return
+
+    new_value = not current_value
+
+    # Update the value in the database
+    await rq.update_vote_is_in_person(vote_id, new_value)
+
+    # Inform the user about the change
+    message_text = "Тип голосования изменен на очное." if new_value else "Тип голосования изменен на неочное."
     await callback_query.message.edit_text(message_text)
-    # Изменяем клавиатуру в сообщении
     await callback_query.message.edit_reply_markup(reply_markup=kb.inline_main_menu)
 
+    # Clear the state data related to the edit
+    await state.clear()
+
+@router.callback_query(lambda c: c.data.startswith("edit_is_closed_"))
+async def edit_is_closed(callback_query: CallbackQuery, state: FSMContext):
+    vote_id = int(callback_query.data.split("_")[-1])
+    await state.update_data(edit_vote_id=vote_id)
+    await edit_is_closed_start(callback_query, state)
 
 @router.callback_query(lambda c: c.data == "edit_is_closed")
-async def edit_is_closed(callback_query: CallbackQuery, state: FSMContext):
-    # Получаем текущее значение переменной
+async def edit_is_closed_start(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    current_value = data.get('is_closed', False)  # Устанавливаем значение по умолчанию в False
-    new_value = not current_value  # Инвертируем текущее значение
-    # Сохраняем новое значение переменной в контексте состояния
-    await state.update_data(is_closed=new_value)
-    # Определяем текст сообщения в зависимости от нового значения переменной
-    message_text = "Вы изменили тип голосования на закрытое." if new_value else "Вы изменили тип голосования на открытое."
+    vote_id = data.get('edit_vote_id')
+    vote_data = await rq.get_vote_details(vote_id)
+
+    if not vote_data:
+        await callback_query.message.edit_text("Голосование не найдено.")
+        return
+
+    current_value = vote_data.get('is_closed')
+    if current_value is None:
+        await callback_query.message.edit_text("Информация о голосовании неполная.")
+        return
+
+    new_value = not current_value
+
+    # Update the value in the database
+    await rq.update_vote_is_closed(vote_id, new_value)
+
+    # Inform the user about the change
+    message_text = "Тип голосования изменен на закрытое." if new_value else "Тип голосования изменен на открытое."
     await callback_query.message.edit_text(message_text)
-    # Изменяем клавиатуру в сообщении
     await callback_query.message.edit_reply_markup(reply_markup=kb.inline_main_menu)
+
+    # Clear the state data related to the edit
+    await state.clear()
+
 
 @router.callback_query(lambda c: c.data.startswith("edit_is_visible_in_progress_"))
 async def edit_is_visible_in_progress(callback_query: CallbackQuery, state: FSMContext):
     vote_id = int(callback_query.data.split("_")[-1])
     await state.update_data(edit_vote_id=vote_id)
     await edit_is_visible_in_progress_start(callback_query, state)
-# Update the edit_is_visible_in_progress_start function
+
 @router.callback_query(lambda c: c.data == "edit_is_visible_in_progress")
 async def edit_is_visible_in_progress_start(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -343,7 +385,7 @@ async def edit_is_visible_in_progress_start(callback_query: CallbackQuery, state
         await callback_query.message.edit_text("Голосование не найдено.")
         return
 
-    current_value = vote_data.get('is_visible_in_progress')  # Access the value using the key
+    current_value = vote_data.get('is_visible_in_progress')
     if current_value is None:
         await callback_query.message.edit_text("Информация о голосовании неполная.")
         return
@@ -353,13 +395,13 @@ async def edit_is_visible_in_progress_start(callback_query: CallbackQuery, state
     # Update the value in the database
     await rq.update_vote_visibility(vote_id, new_value)
 
-    # Update the value in the state
-    await state.update_data(is_visible_in_progress=new_value)
-
     # Inform the user about the change
     message_text = "Голосование стало видимым в процессе." if new_value else "Голосование скрыто в процессе."
     await callback_query.message.edit_text(message_text)
     await callback_query.message.edit_reply_markup(reply_markup=kb.inline_main_menu)
+
+    # Clear the state data related to the edit
+    await state.clear()
 
 
 
