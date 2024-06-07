@@ -1,5 +1,5 @@
 from datetime import datetime
-from aiogram import Router, F
+from aiogram import Router, F, types
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import StatesGroup, State
@@ -60,8 +60,21 @@ async def reg_check_password(message: Message, state: FSMContext):
 
 
 async def clear_and_prompt(state, message, prompt_text, reply_markup):
-    await state.clear()
-    await message.answer(prompt_text, reply_markup=reply_markup)
+    # Проверяем, является ли сообщение CallbackQuery
+    if isinstance(message, types.CallbackQuery):
+        # Получаем идентификатор чата и сообщения
+        chat_id = message.message.chat.id
+        message_id = message.message.message_id
+        # Удаляем предыдущее сообщение с меню
+        await message.message.bot.delete_message(chat_id, message_id)
+        # Отправляем новое сообщение с меню
+        await message.message.answer(prompt_text, reply_markup=reply_markup)
+    # Проверяем, является ли сообщение Message
+    elif isinstance(message, types.Message):
+        # Удаляем предыдущее сообщение с меню
+        await message.delete_reply_markup()
+        # Отправляем новое сообщение с меню
+        await message.answer(prompt_text, reply_markup=reply_markup)
 
 
 @router.message(F.text == "Создать голосование")
@@ -78,15 +91,19 @@ async def create_vote_start_handler(event, state: FSMContext):
 async def create_vote_save(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await rq.save_incomplete_vote(data, callback_query.from_user.id)
+    # Удаляем предыдущее сообщение с меню
+    await callback_query.message.delete()
     await state.clear()
-    await callback_query.message.edit_text("Черновик сохранен.", reply_markup=kb.inline_main_menu)
+    await callback_query.message.answer("Черновик сохранен.", reply_markup=kb.inline_main_menu)
 
 
 @router.callback_query(lambda c: c.data == "create_vote_cancel")
 async def cancel_create_vote(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.answer('')
-    await callback_query.message.edit_text("Создание голосования отменено.", reply_markup=kb.inline_main_menu)
+    # Удаляем предыдущее сообщение с меню
+    await callback_query.message.delete()
     await state.clear()
+    await callback_query.message.answer("Создание голосования отменено.", reply_markup=kb.inline_main_menu)
 
 
 @router.message(CreateVote.topic)
@@ -660,3 +677,54 @@ async def show_votes(message: Message):
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
     await message.answer('Выберите голосование:', reply_markup=keyboard)
+
+
+#Личный кабинет
+@router.message(lambda message: message.text == "Личный кабинет")
+async def handle_reply_button(message: Message):
+    user_info, areas = await rq.fetch_user_info_and_areas(message.from_user.id)
+
+    if user_info:
+        user_info_text = (
+            f"Имя: {user_info['first_name']}\n"
+            f"Фамилия: {user_info['second_name']}\n"
+            f"Отчество: {user_info['patronymic']}\n"
+            f"Телефон: {user_info['phone_number']}\n"
+            f"Email: {user_info['email']}\n"
+            f"Уровень доступа: {'Админ' if user_info['access_level'] else 'Пользователь'}\n"
+        )
+        if areas:
+            areas_info = "\n".join(
+                [f"Адрес: {area['address']}\nКадастровый номер: {area['cadastral_number']}\n" for area in areas])
+        else:
+            areas_info = None
+
+        await rq.send_user_info(message, user_info_text, areas_info)
+    else:
+        await message.answer("Пользователь не найден.")
+
+
+# Обработчик для inline-кнопки "Личный кабинет"
+@router.callback_query(lambda c: c.data == 'lc')
+async def handle_inline_button(callback_query: CallbackQuery):
+    user_info, areas = await rq.fetch_user_info_and_areas(callback_query.from_user.id)
+
+    if user_info:
+        user_info_text = (
+            f"Имя: {user_info['first_name']}\n"
+            f"Фамилия: {user_info['second_name']}\n"
+            f"Отчество: {user_info['patronymic']}\n"
+            f"Телефон: {user_info['phone_number']}\n"
+            f"Email: {user_info['email']}\n"
+            f"Уровень доступа: {'Админ' if user_info['access_level'] else 'Пользователь'}\n"
+        )
+        if areas:
+            areas_info = "\n".join(
+                [f"Адрес: {area['address']}\nКадастровый номер: {area['cadastral_number']}\n" for area in areas])
+        else:
+            areas_info = None
+
+        await rq.send_user_info(callback_query, user_info_text, areas_info)
+        await callback_query.answer()  # Закрываем inline-кнопку без всплывающего сообщения
+    else:
+        await callback_query.message.answer("Пользователь не найден.")

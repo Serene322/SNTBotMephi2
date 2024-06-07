@@ -1,5 +1,5 @@
 from app.database.models import async_session
-from app.database.models import User, Vote, Point, Option, Result
+from app.database.models import Area, User, Vote, Point, Option, Result
 from sqlalchemy.future import select
 
 
@@ -265,6 +265,49 @@ async def has_user_completed_vote(user_id, vote_id):
         )
         return result.scalar() is not None
 
+
+#Личный кабинет
+
+
+async def fetch_user_info_and_areas(telegram_id: int):
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
+        if not user:
+            return None, []
+
+        user_info = {
+            "first_name": user.first_name,
+            "second_name": user.second_name,
+            "patronymic": user.patronymic,
+            "phone_number": user.phone_number,
+            "email": user.email,
+            "access_level": user.access_level,
+        }
+
+        areas = await session.scalars(select(Area).where(Area.client_id == user.id))
+        area_list = [{
+            "address": area.address,
+            "cadastral_number": area.cadastral_number
+        } for area in areas]
+
+        return user_info, area_list
+
+
+from  aiogram import types
+async def send_user_info(message_or_query, user_info_text, areas_info=None):
+    if areas_info:
+        reply_markup = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="Главное меню", callback_data="to_inline_menu")]
+        ])
+        if isinstance(message_or_query, types.Message):
+            await message_or_query.answer(user_info_text + "\nУчастки:\n" + areas_info, reply_markup=reply_markup)
+        elif isinstance(message_or_query, types.CallbackQuery):
+            await message_or_query.message.edit_text(user_info_text + "\nУчастки:\n" + areas_info, reply_markup=reply_markup)
+    else:
+        if isinstance(message_or_query, types.Message):
+            await message_or_query.answer(user_info_text)
+        elif isinstance(message_or_query, types.CallbackQuery):
+            await message_or_query.message.edit_text(user_info_text)
 
 '''Добавление смены времени не понял как должно работать
 async def update_vote_start_time(vote_id: int, new_start_time: DateTime):
