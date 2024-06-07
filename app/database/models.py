@@ -58,19 +58,6 @@ class Vote(Base):
     points = relationship("Point", back_populates="vote")
 
 
-# class Vote(Base):
-#     __tablename__ = 'votes'
-#
-#     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-#     creator_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
-#     closed: Mapped[bool] = mapped_column(Boolean, default=False)
-#     start_dttm: Mapped[DateTime] = mapped_column(DateTime)
-#     end_dttm: Mapped[DateTime] = mapped_column(DateTime)
-#
-#     creator = relationship("User", back_populates="votes_created")
-#     points = relationship("Point", back_populates="vote")
-
-
 class Point(Base):
     __tablename__ = 'points'
 

@@ -1,6 +1,6 @@
 from app.database.models import async_session
 from app.database.models import User, Vote, Point, Option, Result
-from sqlalchemy import select, update
+from sqlalchemy.future import select
 
 
 async def set_telegram_id(email: str, telegram_id: int):
@@ -14,33 +14,32 @@ async def set_telegram_id(email: str, telegram_id: int):
 async def registration(email: str, password: str):
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.email == email))
-        if user and user.password == password:
-            return True
-        return False
+        return user and user.password == password
 
 
 async def create_vote(vote_data, telegram_id):
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
+        user = await fetch_user_by_telegram_id(telegram_id)
         if not user:
             return None
 
-        creator_id = user.id
-
         vote = Vote(
-            creator_id=creator_id,
-            topic=vote_data['topic'],
-            description=vote_data['description'],
-            is_in_person=vote_data['is_in_person'],
-            is_closed=vote_data['is_closed'],
-            is_visible_in_progress=vote_data['is_visible_in_progress'],
-            is_finished=vote_data['is_finished'],
-            start_time=vote_data['start_time'],
-            end_time=vote_data['end_time']
+            creator_id=user.id,
+            **vote_data
         )
         session.add(vote)
         await session.commit()
         return vote.id
+
+
+async def fetch_user_by_telegram_id(telegram_id: int):
+    async with async_session() as session:
+        return await session.scalar(select(User).where(User.telegram_id == telegram_id))
+
+
+async def fetch_vote_by_id(vote_id: int):
+    async with async_session() as session:
+        return await session.scalar(select(Vote).where(Vote.id == vote_id))
 
 
 async def add_point(vote_id: int, point_body: str):
@@ -67,7 +66,8 @@ async def save_incomplete_vote(data, telegram_id):
         creator_id = user.id
 
         # Проверяем, существует ли уже голосование с такой же темой
-        existing_vote = await session.scalar(select(Vote).where(Vote.topic == data['topic']).where(Vote.creator_id == creator_id))
+        existing_vote = await session.scalar(
+            select(Vote).where(Vote.topic == data['topic']).where(Vote.creator_id == creator_id))
         if existing_vote:
             vote_id = existing_vote.id
         else:
@@ -89,7 +89,8 @@ async def save_incomplete_vote(data, telegram_id):
 
         for point_data in data['points']:
             # Проверяем, существует ли уже пункт с таким текстом в базе данных
-            existing_point = await session.scalar(select(Point).where(Point.vote_id == vote_id).where(Point.body == point_data['body']))
+            existing_point = await session.scalar(
+                select(Point).where(Point.vote_id == vote_id).where(Point.body == point_data['body']))
             if not existing_point:
                 point = Point(body=point_data['body'], vote_id=vote_id)
                 session.add(point)
@@ -102,10 +103,6 @@ async def save_incomplete_vote(data, telegram_id):
                     await session.commit()
 
 
-
-
-
-
 async def save_vote(data, telegram_id):
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
@@ -114,7 +111,8 @@ async def save_vote(data, telegram_id):
 
         creator_id = user.id
 
-        vote = await session.scalar(select(Vote).where(Vote.creator_id == creator_id).where(Vote.topic == data['topic']))
+        vote = await session.scalar(
+            select(Vote).where(Vote.creator_id == creator_id).where(Vote.topic == data['topic']))
         if vote:
             vote.description = data.get('description', vote.description)
             vote.is_in_person = data['is_in_person']
@@ -151,7 +149,8 @@ async def save_vote(data, telegram_id):
                     session.add(option)
                     await session.commit()
 
-#Запрос для получения незавершённых голосований
+
+# Запрос для получения незавершённых голосований
 async def get_unfinished_votes(telegram_id: int):
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
@@ -161,7 +160,8 @@ async def get_unfinished_votes(telegram_id: int):
         votes = await session.scalars(select(Vote).where(Vote.creator_id == user.id, Vote.is_finished == False))
         return [{'id': vote.id, 'topic': vote.topic} for vote in votes]
 
-#Запрос для получения информации голосования
+
+# Запрос для получения информации голосования
 async def get_vote_details(vote_id: int):
     async with async_session() as session:
         vote = await session.scalar(select(Vote).where(Vote.id == vote_id))
@@ -176,58 +176,48 @@ async def get_vote_details(vote_id: int):
             'end_time': vote.end_time.strftime('%Y-%m-%d'),
             'is_in_person': vote.is_in_person,
             'is_closed': vote.is_closed,
-            'is_visible_in_progress': vote.is_visible_in_progress
+            'is_visible_in_progress': vote.is_visible_in_progress,
+            'is_finished': vote.is_finished
         }
 
 
-#Запросы для обновления полей голосования
-async def update_vote_topic(vote_id: int, new_topic: str):
-    async with async_session() as session:
-        await session.execute(update(Vote).where(Vote.id == vote_id).values(topic=new_topic))
-        await session.commit()
-
-async def update_vote_description(vote_id: int, new_description: str):
-    async with async_session() as session:
-        await session.execute(update(Vote).where(Vote.id == vote_id).values(description=new_description))
-        await session.commit()
-
-async def update_vote_visibility(vote_id, new_value):
+async def update_vote_field(vote_id: int, field: str, value):
     async with async_session() as session:
         vote = await session.get(Vote, vote_id)
-        if vote is None:
-            return False  # Возвращаем False, если голосование не найдено
+        if vote:
+            setattr(vote, field, value)
+            await session.commit()
+            return True
+        return False
 
-        vote.is_visible_in_progress = new_value
-        await session.commit()
-        return True  # Возвращаем True при успешном обновлении
+
+# Запросы для обновления полей голосования
+
+async def update_vote_topic(vote_id: int, new_topic: str):
+    return await update_vote_field(vote_id, 'topic', new_topic)
+
+
+async def update_vote_description(vote_id: int, new_description: str):
+    return await update_vote_field(vote_id, 'description', new_description)
+
+
+async def update_vote_visibility(vote_id, new_value):
+    return await update_vote_field(vote_id, 'is_visible_in_progress', new_value)
 
 
 async def update_vote_is_closed(vote_id, new_value):
-    async with async_session() as session:
-        vote = await session.get(Vote, vote_id)
-        if vote is None:
-            return False  # Возвращаем False, если голосование не найдено
+    return await update_vote_field(vote_id, 'is_closed', new_value)
 
-        vote.is_closed = new_value
-        await session.commit()
-        return True  # Возвращаем True при успешном обновлении
 
 async def update_vote_is_in_person(vote_id, new_value):
-    async with async_session() as session:
-        vote = await session.get(Vote, vote_id)
-        if vote is None:
-            return False  # Возвращаем False, если голосование не найдено
+    return await update_vote_field(vote_id, 'is_in_person', new_value)
 
-        vote.is_in_person = new_value
-        await session.commit()
-        return True  # Возвращаем True при успешном обновлении
 
-async def update_vote_is_finished(vote_id: int, new_is_finished: bool):
-    async with async_session() as session:
-        await session.execute(update(Vote).where(Vote.id == vote_id).values(is_finished=new_is_finished))
-        await session.commit()
+async def update_vote_is_finished(vote_id: int, new_value):
+    return await update_vote_field(vote_id, 'is_finished', new_value)
 
-#ГОЛОСОВАНИЕ.
+
+# ГОЛОСОВАНИЕ.
 
 async def get_active_votes(user_id):
     async with async_session() as session:
@@ -238,9 +228,6 @@ async def get_active_votes(user_id):
                 active_votes.append({'id': vote.id, 'topic': vote.topic})
         return active_votes
 
-
-
-from sqlalchemy.future import select
 
 async def get_vote_details_with_points(vote_id):
     async with async_session() as session:
@@ -261,6 +248,7 @@ async def get_vote_details_with_points(vote_id):
 
             return vote, points
 
+
 # Функция для сохранения результата голосования в базе данных
 async def save_result(client_id: int, point_id: int, option_id: int):
     async with async_session() as session:
@@ -268,23 +256,14 @@ async def save_result(client_id: int, point_id: int, option_id: int):
         session.add(result)
         await session.commit()
 
-#Функция проверки, выполнил ли пользователь голосование
+
+# Функция проверки, выполнил ли пользователь голосование
 async def has_user_completed_vote(user_id, vote_id):
     async with async_session() as session:
         result = await session.execute(
             select(Result).join(Point).where(Result.client_id == user_id, Point.vote_id == vote_id)
         )
         return result.scalar() is not None
-
-
-
-
-
-
-
-
-
-
 
 
 '''Добавление смены времени не понял как должно работать
