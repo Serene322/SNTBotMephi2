@@ -62,7 +62,6 @@ async def reg_check_password(message: Message, state: FSMContext):
 async def clear_and_prompt(state, message, prompt_text, reply_markup):
     # Проверяем, является ли сообщение CallbackQuery
     if isinstance(message, types.CallbackQuery):
-        # Получаем идентификатор чата и сообщения
         chat_id = message.message.chat.id
         message_id = message.message.message_id
         # Удаляем предыдущее сообщение с меню
@@ -483,6 +482,10 @@ async def to_inline_main_menu(callback_query: CallbackQuery, state: FSMContext):
 
 
 # Обработка кнопки "Проголосовать"
+# Функция для форматирования времени в нужный формат
+def format_time_range(start_time, end_time):
+    return f"{start_time.strftime('%Y.%m.%d')}-{end_time.strftime('%Y.%m.%d')}"
+
 @router.callback_query(lambda c: c.data == 'vote')
 async def show_votes(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
@@ -497,13 +500,17 @@ async def show_votes(callback_query: CallbackQuery):
         return
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=vote['topic'], callback_data=f"vote_{vote['id']}")] for vote in votes
+        [InlineKeyboardButton(
+            text=f"{vote['topic']}\n{format_time_range(vote['start_time'], vote['end_time'])}",
+            callback_data=f"vote_{vote['id']}"
+        )] for vote in votes
     ] + [
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
     new_text = 'Выберите голосование из списка:'
     if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
         await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+
 
 # Обработка выбора голосования
 @router.callback_query(lambda c: c.data.startswith('vote_'))
@@ -647,7 +654,7 @@ async def to_inline_menu(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.message.edit_text("Возврат  в меню.", reply_markup=kb.inline_main_menu)
 
 
-# Для reply-кнопки
+# Обработчик для reply-кнопки
 @router.message(F.text == 'Проголосовать')
 async def show_votes(message: Message):
     user_id = message.from_user.id
@@ -656,8 +663,12 @@ async def show_votes(message: Message):
         await message.answer('Нет доступных голосований.', reply_markup=kb.inline_main_menu)
         return
 
+    # Формируем клавиатуру с использованием format_time_range
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=vote['topic'], callback_data=f"vote_{vote['id']}")] for vote in votes
+        [InlineKeyboardButton(
+            text=f"{vote['topic']}\n{format_time_range(vote['start_time'], vote['end_time'])}",
+            callback_data=f"vote_{vote['id']}"
+        )] for vote in votes
     ] + [
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
