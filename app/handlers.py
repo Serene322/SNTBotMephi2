@@ -486,6 +486,15 @@ async def to_inline_main_menu(callback_query: CallbackQuery, state: FSMContext):
 def format_time_range(start_time, end_time):
     return f"{start_time.strftime('%Y.%m.%d')}-{end_time.strftime('%Y.%m.%d')}"
 
+# Функция для форматирования оставшегося времени
+def format_remaining_time(end_time):
+    remaining_time = end_time - datetime.now()
+    days = remaining_time.days
+    hours, remainder = divmod(remaining_time.seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    return f"{days} дней, {hours} часов, {minutes} минут"
+
+# Обработчик для callback-кнопки
 @router.callback_query(lambda c: c.data == 'vote')
 async def show_votes(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
@@ -501,9 +510,9 @@ async def show_votes(callback_query: CallbackQuery):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"{vote['topic']}\n{format_time_range(vote['start_time'], vote['end_time'])}",
+            text=f"{vote['topic']}\nОсталось: {format_remaining_time(vote['end_time'])}",
             callback_data=f"vote_{vote['id']}"
-        )] for vote in votes
+        )] for vote in votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
     ] + [
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
@@ -663,12 +672,12 @@ async def show_votes(message: Message):
         await message.answer('Нет доступных голосований.', reply_markup=kb.inline_main_menu)
         return
 
-    # Формируем клавиатуру с использованием format_time_range
+    # Формируем клавиатуру с использованием format_time_range и format_remaining_time
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"{vote['topic']}\n{format_time_range(vote['start_time'], vote['end_time'])}",
+            text=f"{vote['topic']}\nОсталось: {format_remaining_time(vote['end_time'])}",
             callback_data=f"vote_{vote['id']}"
-        )] for vote in votes
+        )] for vote in votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
     ] + [
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
