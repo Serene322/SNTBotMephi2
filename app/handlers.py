@@ -518,11 +518,14 @@ async def show_votes(callback_query: CallbackQuery):
             await callback_query.answer('Нет доступных голосований.', show_alert=True)
         return
 
+    # Сортировка голосований по времени до окончания
+    sorted_votes = sorted(votes, key=lambda x: x['end_time'] - datetime.now())
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"{vote['topic']}. \nОсталось: {format_remaining_time(vote['end_time'])}",
+            text=f"{vote['topic']}. \n{format_remaining_time(vote['end_time'])}",
             callback_data=f"vote_{vote['id']}"
-        )] for vote in votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
+        )] for vote in sorted_votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
     ] + [
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
@@ -682,12 +685,15 @@ async def show_votes(message: Message):
         await message.answer('Нет доступных голосований.', reply_markup=kb.inline_main_menu)
         return
 
+    # Сортировка голосований по времени до окончания
+    sorted_votes = sorted(votes, key=lambda x: x['end_time'] - datetime.now())
+
     # Формируем клавиатуру с использованием format_time_range и format_remaining_time
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"{vote['topic']}\nОсталось: {format_remaining_time(vote['end_time'])}",
+            text=f"{vote['topic']}\n{format_remaining_time(vote['end_time'])}",
             callback_data=f"vote_{vote['id']}"
-        )] for vote in votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
+        )] for vote in sorted_votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
     ] + [
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
