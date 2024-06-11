@@ -247,21 +247,34 @@ async def finalize_vote(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.message.edit_text("Голосование завершено и сохранено.", reply_markup=kb.inline_main_menu)
 
 
-# Обработка кнопки "Проголосовать"
+# Обработка кнопки "Изменить голосование"
 @router.message(F.text == "Изменить голосование")
 @router.callback_query(lambda c: c.data == "change")
 async def change_vote_start(event):
-    votes = await rq.get_unfinished_votes(event.from_user.id if isinstance(event, Message) else event.from_user.id)
+    # Получаем ID пользователя
+    user_id = event.from_user.id
+
+    # Получаем незавершенные голосования
+    votes = await rq.get_unfinished_votes(user_id)
+
+    # Если нет доступных голосований
     if not votes:
-        await (event.answer if isinstance(event, CallbackQuery) else event.message.answer)(
-            'Нет доступных голосований для изменения.')
+        if isinstance(event, CallbackQuery):
+            await event.answer('Нет доступных голосований для изменения.')
+        else:
+            await event.answer('Нет доступных голосований для изменения.')
         return
 
+    # Создаем клавиатуру с доступными голосованиями
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=vote['topic'], callback_data=f"edit_vote_{vote['id']}")] for vote in votes
     ])
-    await (event.message.edit_text if isinstance(event, CallbackQuery) else event.answer)(
-        'Выберите голосование для изменения:', reply_markup=keyboard)
+
+    # Отправляем сообщение с клавиатурой
+    if isinstance(event, CallbackQuery):
+        await event.message.edit_text('Выберите голосование для изменения:', reply_markup=keyboard)
+    else:
+        await event.answer('Выберите голосование для изменения:', reply_markup=keyboard)
 
 
 @router.message(lambda message: message.text == "vo")
@@ -592,59 +605,32 @@ async def get_user_id(callback_query: CallbackQuery) -> int:
     return user_id
 
 
-# Обработка ответа "Да"
-@router.callback_query(lambda c: c.data == 'answer_yes')
-async def handle_answer_yes(callback_query: CallbackQuery, state: FSMContext):
+@router.callback_query(lambda c: c.data in ['answer_yes', 'answer_no', 'answer_uncertain'])
+async def handle_answers(callback_query: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    points = data['points']
+    points = data.get('points', [])
     if not points:
         await callback_query.message.edit_text('Все пункты голосования показаны.', reply_markup=kb.inline_main_menu)
         return
+
     # Получаем текущий пункт голосования
     point = points.pop(0)
+
+    # Определяем, какой вариант ответа был выбран
+    answer_mapping = {
+        'answer_yes': 1,
+        'answer_no': 0,
+        'answer_uncertain': 2
+    }
+    option_id = answer_mapping.get(callback_query.data)
+
     # Сохраняем результат в базу данных
     user_id = await get_user_id(callback_query)
-    await rq.save_result(client_id=user_id, point_id=point.id, option_id=1)
+    await rq.save_result(client_id=user_id, point_id=point.id, option_id=option_id)
+
     # Обновляем состояние
     await state.update_data(points=points)
-    # Переходим к следующему пункту голосования
-    await show_next_point(callback_query, state)
 
-
-# Обработка ответа "Нет"
-@router.callback_query(lambda c: c.data == 'answer_no')
-async def handle_answer_no(callback_query: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    points = data['points']
-    if not points:
-        await callback_query.message.edit_text('Все пункты голосования показаны.', reply_markup=kb.inline_main_menu)
-        return
-    # Получаем текущий пункт голосования
-    point = points.pop(0)
-    # Сохраняем результат в базу данных
-    user_id = await get_user_id(callback_query)
-    await rq.save_result(client_id=user_id, point_id=point.id, option_id=0)
-    # Обновляем состояние
-    await state.update_data(points=points)
-    # Переходим к следующему пункту голосования
-    await show_next_point(callback_query, state)
-
-
-# Обработка ответа "Затрудняюсь ответить"
-@router.callback_query(lambda c: c.data == 'answer_uncertain')
-async def handle_answer_uncertain(callback_query: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    points = data['points']
-    if not points:
-        await callback_query.message.edit_text('Все пункты голосования показаны.', reply_markup=kb.inline_main_menu)
-        return
-    # Получаем текущий пункт голосования
-    point = points.pop(0)
-    # Сохраняем результат в базу данных
-    user_id = await get_user_id(callback_query)
-    await rq.save_result(client_id=user_id, point_id=point.id, option_id=2)
-    # Обновляем состояние
-    await state.update_data(points=points)
     # Переходим к следующему пункту голосования
     await show_next_point(callback_query, state)
 
