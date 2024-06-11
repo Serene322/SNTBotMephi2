@@ -66,16 +66,15 @@ async def clear_and_prompt(state, message, prompt_text, reply_markup):
         chat_id = message.message.chat.id
         message_id = message.message.message_id
         # Удаляем предыдущее сообщение с меню
-        await message.message.bot.delete_message(chat_id, message_id)
+        await message.message.delete()
         # Отправляем новое сообщение с меню
-        await message.message.answer(prompt_text, reply_markup=reply_markup)
+        await message.message.bot.send_message(chat_id, prompt_text, reply_markup=reply_markup)
     # Проверяем, является ли сообщение Message
     elif isinstance(message, types.Message):
         # Удаляем предыдущее сообщение с меню
-        await message.delete_reply_markup()
+        await message.delete()
         # Отправляем новое сообщение с меню
-        await message.answer(prompt_text, reply_markup=reply_markup)
-
+        await message.bot.send_message(message.chat.id, prompt_text, reply_markup=reply_markup)
 
 @router.message(F.text == "Создать голосование")
 @router.callback_query(lambda c: c.data == "create_vote_start")
@@ -666,9 +665,8 @@ async def show_votes(message: Message):
 
 
 #Личный кабинет
-@router.message(lambda message: message.text == "Личный кабинет")
-async def handle_reply_button(message: Message):
-    user_info, areas = await rq.fetch_user_info_and_areas(message.from_user.id)
+async def fetch_and_send_user_info(user_id, message):
+    user_info, areas = await rq.fetch_user_info_and_areas(user_id)
 
     if user_info:
         user_info_text = (
@@ -689,28 +687,16 @@ async def handle_reply_button(message: Message):
     else:
         await message.answer("Пользователь не найден.")
 
+    # После вывода информации или ошибки добавляем клавиатуру inline_main_menu
+    await message.answer("Выберите действие:", reply_markup=kb.inline_main_menu)
 
-# Обработчик для inline-кнопки "Личный кабинет"
+
+@router.message(F.text=="Личный кабинет")
 @router.callback_query(lambda c: c.data == 'lc')
-async def handle_inline_button(callback_query: CallbackQuery):
-    user_info, areas = await rq.fetch_user_info_and_areas(callback_query.from_user.id)
+async def handle_user_info(event):
+    if isinstance(event, Message):
+        await fetch_and_send_user_info(event.from_user.id, event)
+    elif isinstance(event, CallbackQuery):
+        await fetch_and_send_user_info(event.from_user.id, event.message)
+        await event.answer()  # Закрываем inline-кнопку без всплывающего сообщения
 
-    if user_info:
-        user_info_text = (
-            f"Имя: {user_info['first_name']}\n"
-            f"Фамилия: {user_info['second_name']}\n"
-            f"Отчество: {user_info['patronymic']}\n"
-            f"Телефон: {user_info['phone_number']}\n"
-            f"Email: {user_info['email']}\n"
-            f"Уровень доступа: {'Админ' if user_info['access_level'] else 'Пользователь'}\n"
-        )
-        if areas:
-            areas_info = "\n".join(
-                [f"Адрес: {area['address']}\nКадастровый номер: {area['cadastral_number']}\n" for area in areas])
-        else:
-            areas_info = None
-
-        await rq.send_user_info(callback_query, user_info_text, areas_info)
-        await callback_query.answer()  # Закрываем inline-кнопку без всплывающего сообщения
-    else:
-        await callback_query.message.answer("Пользователь не найден.")
