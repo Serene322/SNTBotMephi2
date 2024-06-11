@@ -489,10 +489,20 @@ def format_time_range(start_time, end_time):
 # Функция для форматирования оставшегося времени
 def format_remaining_time(end_time):
     remaining_time = end_time - datetime.now()
-    days = remaining_time.days
-    hours, remainder = divmod(remaining_time.seconds, 3600)
-    minutes, _ = divmod(remainder, 60)
-    return f"{days} дней, {hours} часов, {minutes} минут"
+
+    if remaining_time.days > 365:
+        return "Более 1 года"
+    elif 30 <= remaining_time.days <= 365:
+        return "Более 1 месяца"
+    elif remaining_time.days >= 1:
+        return f"{remaining_time.days}д, {remaining_time.seconds // 3600}ч, {(remaining_time.seconds % 3600) // 60}м"
+    elif remaining_time.seconds >= 3600:
+        return f"{remaining_time.seconds // 3600}ч, {(remaining_time.seconds % 3600) // 60}м"
+    elif remaining_time.seconds > 60:
+        return f"{remaining_time.seconds // 60}м"
+    else:
+        return "До конца голосования менее минуты!"
+
 
 # Обработчик для callback-кнопки
 @router.callback_query(lambda c: c.data == 'vote')
@@ -510,7 +520,7 @@ async def show_votes(callback_query: CallbackQuery):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"{vote['topic']}\nОсталось: {format_remaining_time(vote['end_time'])}",
+            text=f"{vote['topic']}. \nОсталось: {format_remaining_time(vote['end_time'])}",
             callback_data=f"vote_{vote['id']}"
         )] for vote in votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
     ] + [
