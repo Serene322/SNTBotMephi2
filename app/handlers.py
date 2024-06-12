@@ -51,7 +51,8 @@ async def reg_check_password(message: Message, state: FSMContext):
     answer = await rq.registration(email, password)
     if answer:
         await rq.set_telegram_id(email, message.from_user.id)
-        await message.answer('Авторизация прошла успешно', reply_markup=kb.inline_main_menu)
+        access_level = await rq.get_access_level(message.from_user.id)
+        await message.answer('Авторизация прошла успешно', reply_markup=await kb.check_employee_ability(access_level))
         await state.clear()
     else:
         await message.answer('Ошибка во время авторизации. Попробуйте снова.')
@@ -307,7 +308,7 @@ async def inline_change_vote_start(callback_query: CallbackQuery):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=vote['topic'], callback_data=f"edit_vote_{vote['id']}")] for vote in votes
-    ] )
+    ])
     await callback_query.message.edit_text('Выберите голосование для изменения:', reply_markup=keyboard)
 
 
@@ -457,6 +458,7 @@ async def edit_is_visible_in_progress_start(callback_query: CallbackQuery, state
     # Clear the state data related to the edit
     await state.clear()
 
+
 @router.callback_query(lambda c: c.data.startswith("edit_is_finished_"))
 async def edit_is_finished(callback_query: CallbackQuery, state: FSMContext):
     vote_id = int(callback_query.data.split("_")[-1])
@@ -603,12 +605,14 @@ async def show_vote_details_message(callback_query: CallbackQuery, state: FSMCon
 # Функция для отображения следующего пункта голосования
 @router.callback_query(lambda c: c.data == 'next_point')
 async def show_next_point(callback_query: CallbackQuery, state: FSMContext):
+    access_level = await rq.get_access_level(callback_query.from_user.id)
     data = await state.get_data()
     points = data['points']
 
-    # Проверяем, есть ли еще точки для отображения
+    # Проверяем, есть ли еще пункты голосования
     if not points:
-        await callback_query.message.edit_text('Все пункты голосования показаны.', reply_markup=kb.inline_main_menu)
+        await callback_query.message.edit_text('Главное меню.',
+                                               reply_markup=await kb.check_employee_ability(access_level))
         return
 
     # Получаем текущий пункт голосования
@@ -636,32 +640,65 @@ async def get_user_id(callback_query: CallbackQuery) -> int:
     return user_id
 
 
-@router.callback_query(lambda c: c.data in ['answer_yes', 'answer_no', 'answer_uncertain'])
-async def handle_answers(callback_query: CallbackQuery, state: FSMContext):
+# Обработка ответа "Да"
+@router.callback_query(lambda c: c.data == 'answer_yes')
+async def handle_answer_yes(callback_query: CallbackQuery, state: FSMContext):
+    access_level = await rq.get_access_level(callback_query.from_user.id)
     data = await state.get_data()
-    points = data.get('points', [])
+    points = data['points']
     if not points:
-        await callback_query.message.edit_text('Все пункты голосования показаны.', reply_markup=kb.inline_main_menu)
+        await callback_query.message.edit_text('Все пункты голосования показаны.',
+                                               reply_markup=await kb.check_employee_ability(access_level))
         return
-
     # Получаем текущий пункт голосования
     point = points.pop(0)
-
-    # Определяем, какой вариант ответа был выбран
-    answer_mapping = {
-        'answer_yes': 1,
-        'answer_no': 0,
-        'answer_uncertain': 2
-    }
-    option_id = answer_mapping.get(callback_query.data)
-
     # Сохраняем результат в базу данных
     user_id = await get_user_id(callback_query)
-    await rq.save_result(client_id=user_id, point_id=point.id, option_id=option_id)
-
+    await rq.save_result(client_id=user_id, point_id=point.id, option_id=1)
     # Обновляем состояние
     await state.update_data(points=points)
+    # Переходим к следующему пункту голосования
+    await show_next_point(callback_query, state)
 
+
+# Обработка ответа "Нет"
+@router.callback_query(lambda c: c.data == 'answer_no')
+async def handle_answer_no(callback_query: CallbackQuery, state: FSMContext):
+    access_level = await rq.get_access_level(callback_query.from_user.id)
+    data = await state.get_data()
+    points = data['points']
+    if not points:
+        await callback_query.message.edit_text('Все пункты голосования показаны.',
+                                               reply_markup=await kb.check_employee_ability(access_level))
+        return
+    # Получаем текущий пункт голосования
+    point = points.pop(0)
+    # Сохраняем результат в базу данных
+    user_id = await get_user_id(callback_query)
+    await rq.save_result(client_id=user_id, point_id=point.id, option_id=0)
+    # Обновляем состояние
+    await state.update_data(points=points)
+    # Переходим к следующему пункту голосования
+    await show_next_point(callback_query, state)
+
+
+# Обработка ответа "Затрудняюсь ответить"
+@router.callback_query(lambda c: c.data == 'answer_uncertain')
+async def handle_answer_uncertain(callback_query: CallbackQuery, state: FSMContext):
+    access_level = await rq.get_access_level(callback_query.from_user.id)
+    data = await state.get_data()
+    points = data['points']
+    if not points:
+        await callback_query.message.edit_text('Все пункты голосования показаны.',
+                                               reply_markup=await kb.check_employee_ability(access_level))
+        return
+    # Получаем текущий пункт голосования
+    point = points.pop(0)
+    # Сохраняем результат в базу данных
+    user_id = await get_user_id(callback_query)
+    await rq.save_result(client_id=user_id, point_id=point.id, option_id=2)
+    # Обновляем состояние
+    await state.update_data(points=points)
     # Переходим к следующему пункту голосования
     await show_next_point(callback_query, state)
 
@@ -675,8 +712,10 @@ async def continue_showing_points(callback_query: CallbackQuery, state: FSMConte
 
 @router.callback_query(lambda c: c.data == "to_inline_menu")
 async def to_inline_menu(callback_query: CallbackQuery, state: FSMContext):
+    access_level = await rq.get_access_level(callback_query.from_user.id)
     await callback_query.answer('')
-    await callback_query.message.edit_text("Возврат  в меню.", reply_markup=kb.inline_main_menu)
+    await callback_query.message.edit_text("Возврат  в меню.",
+                                           reply_markup=await kb.check_employee_ability(access_level))
 
 
 # Для reply-кнопки
@@ -684,23 +723,26 @@ async def to_inline_menu(callback_query: CallbackQuery, state: FSMContext):
 async def show_votes(message: Message):
     user_id = message.from_user.id
     votes = await rq.get_active_votes(user_id)
+    access_level = await rq.get_access_level(message.from_user.id)
     if not votes:
-        await message.answer('Нет доступных голосований.', reply_markup=kb.inline_main_menu)
+        await message.answer('Нет доступных голосований.',
+                             reply_markup=await kb.check_employee_ability(access_level))
         return
-
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=vote['topic'], callback_data=f"vote_{vote['id']}")] for vote in votes
-    ] + [
-        [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
-    ])
+                                                        [InlineKeyboardButton(text=vote['topic'],
+                                                                              callback_data=f"vote_{vote['id']}")] for
+                                                        vote in votes
+                                                    ] + [
+                                                        [InlineKeyboardButton(text="Выход",
+                                                                              callback_data='to_inline_menu')]
+                                                    ])
     await message.answer('Выберите голосование:', reply_markup=keyboard)
 
 
-#Личный кабинет
+# Личный кабинет
 @router.message(lambda message: message.text == "Личный кабинет")
 async def handle_reply_button(message: Message):
     user_info, areas = await rq.fetch_user_info_and_areas(message.from_user.id)
-
     if user_info:
         user_info_text = (
             f"Имя: {user_info['first_name']}\n"
@@ -708,16 +750,15 @@ async def handle_reply_button(message: Message):
             f"Отчество: {user_info['patronymic']}\n"
             f"Телефон: {user_info['phone_number']}\n"
             f"Email: {user_info['email']}\n"
-            f"Уровень доступа: {'Админ' if user_info['access_level'] else 'Пользователь'}\n"
+            f"Уровень доступа: {'Менеджер' if user_info['access_level'] else 'Пользователь'}\n"
         )
         if areas:
             areas_info = "\n".join(
                 [f"Адрес: {area['address']}\nКадастровый номер: {area['cadastral_number']}\n" for area in areas])
         else:
             areas_info = None
-
         keyboard = InlineKeyboardMarkup(inline_keyboard=
-                                        [[InlineKeyboardButton(text="Выход",callback_data='to_inline_menu')]])
+                                        [[InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]])
 
         await rq.send_user_info(message, user_info_text, areas_info)
     else:
@@ -736,7 +777,7 @@ async def handle_inline_button(callback_query: CallbackQuery):
             f"Отчество: {user_info['patronymic']}\n"
             f"Телефон: {user_info['phone_number']}\n"
             f"Email: {user_info['email']}\n"
-            f"Уровень доступа: {'Админ' if user_info['access_level'] else 'Пользователь'}\n"
+            f"Уровень доступа: {'Менеджер' if user_info['access_level'] else 'Пользователь'}\n"
         )
         if areas:
             areas_info = "\n".join(
@@ -745,7 +786,14 @@ async def handle_inline_button(callback_query: CallbackQuery):
             areas_info = None
 
         await rq.send_user_info(callback_query, user_info_text, areas_info)
+
+        # Создаем клавиатуру с кнопками для возврата в главное меню и перехода к истории голосований
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="to_inline_menu")],
+            [InlineKeyboardButton(text="📜 История голосований", callback_data="vote_history")]
+        ])
+
+        await callback_query.message.edit_reply_markup(reply_markup=keyboard)
         await callback_query.answer()  # Закрываем inline-кнопку без всплывающего сообщения
     else:
         await callback_query.message.answer("Пользователь не найден.")
-

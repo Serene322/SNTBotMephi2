@@ -52,6 +52,11 @@ inline_main_menu = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Изменить голосование", callback_data='change')]
 ])
 
+inline_main_menu_sub = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Личный кабинет", callback_data='lc')],
+    [InlineKeyboardButton(text="Проголосовать", callback_data='vote')],
+])
+
 add_another_point_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Добавить ещё пункт", callback_data="add_point")],
     [InlineKeyboardButton(text="Завершить голосование", callback_data="finalize_vote")]
@@ -76,6 +81,13 @@ edit_vote_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Сделать голосование готовым", callback_data="edit_is_finished")],
     [InlineKeyboardButton(text="Выход", callback_data="create_vote_cancel")]
 ])
+
+
+async def check_employee_ability (access_level):
+    if access_level:
+        return inline_main_menu
+    else:
+        return inline_main_menu_sub
 
 
 def create_keyboard_for_change(votes, page):
