@@ -51,7 +51,7 @@ async def reg_check_password(message: Message, state: FSMContext):
     answer = await rq.registration(email, password)
     if answer:
         await rq.set_telegram_id(email, message.from_user.id)
-        await message.answer('Авторизация прошла успешно', reply_markup=kb.main_menu)
+        await message.answer('Авторизация прошла успешно', reply_markup=kb.inline_main_menu)
         await state.clear()
     else:
         await message.answer('Ошибка во время авторизации. Попробуйте снова.')
@@ -62,20 +62,30 @@ async def reg_check_password(message: Message, state: FSMContext):
 async def clear_and_prompt(state, message, prompt_text, reply_markup):
     # Проверяем, является ли сообщение CallbackQuery
     if isinstance(message, types.CallbackQuery):
+        # Получаем идентификатор чата и сообщения
         chat_id = message.message.chat.id
         message_id = message.message.message_id
         # Удаляем предыдущее сообщение с меню
-        await message.message.delete()
+        await message.message.bot.delete_message(chat_id, message_id)
         # Отправляем новое сообщение с меню
-        await message.message.bot.send_message(chat_id, prompt_text, reply_markup=reply_markup)
+        await message.message.answer(prompt_text, reply_markup=reply_markup)
     # Проверяем, является ли сообщение Message
     elif isinstance(message, types.Message):
         # Удаляем предыдущее сообщение с меню
-        await message.delete()
+        await message.delete_reply_markup()
         # Отправляем новое сообщение с меню
-        await message.bot.send_message(message.chat.id, prompt_text, reply_markup=reply_markup)
+        await message.answer(prompt_text, reply_markup=reply_markup)
+
 
 @router.message(F.text == "Создать голосование")
+async def create_vote_start_handler(event, state: FSMContext):
+    await clear_and_prompt(state, event.message if isinstance(event, CallbackQuery) else event,
+                           'Введите тему голосования:', kb.stop_vote_keyboard)
+    await state.set_state(CreateVote.topic)
+    await state.update_data(description=None, is_in_person=0, is_closed=0, is_visible_in_progress=0, start_time=None,
+                            end_time=None, is_finished=False, points=[])
+
+
 @router.callback_query(lambda c: c.data == "create_vote_start")
 async def create_vote_start_handler(event, state: FSMContext):
     await clear_and_prompt(state, event.message if isinstance(event, CallbackQuery) else event,
@@ -245,34 +255,41 @@ async def finalize_vote(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.message.edit_text("Голосование завершено и сохранено.", reply_markup=kb.inline_main_menu)
 
 
-# Обработка кнопки "Изменить голосование"
+# Обработка кнопки "Проголосовать"
 @router.message(F.text == "Изменить голосование")
 @router.callback_query(lambda c: c.data == "change")
 async def change_vote_start(event):
-    # Получаем ID пользователя
-    user_id = event.from_user.id
-
-    # Получаем незавершенные голосования
+    user_id = event.from_user.id if isinstance(event, Message) else event.from_user.id
     votes = await rq.get_unfinished_votes(user_id)
 
-    # Если нет доступных голосований
     if not votes:
-        if isinstance(event, CallbackQuery):
-            await event.answer('Нет доступных голосований для изменения.')
-        else:
-            await event.answer('Нет доступных голосований для изменения.')
+        await (event.answer if isinstance(event, CallbackQuery) else event.message.answer)(
+            'Нет доступных голосований для изменения.')
         return
 
-    # Создаем клавиатуру с доступными голосованиями
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=vote['topic'], callback_data=f"edit_vote_{vote['id']}")] for vote in votes
-    ])
+    current_page = 0  # Начальная страница
+    keyboard = kb.create_keyboard_for_change(votes, current_page)
 
-    # Отправляем сообщение с клавиатурой
     if isinstance(event, CallbackQuery):
         await event.message.edit_text('Выберите голосование для изменения:', reply_markup=keyboard)
     else:
-        await event.answer('Выберите голосование для изменения:', reply_markup=keyboard)
+        await event.message.answer('Выберите голосование для изменения:', reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith('prev_page_'))
+async def previous_page(callback_query: CallbackQuery):
+    page = int(callback_query.data.split('_')[-1])
+    votes = await rq.get_unfinished_votes(callback_query.from_user.id)
+    keyboard = kb.create_keyboard_for_change(votes, page)
+    await callback_query.message.edit_reply_markup(reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith('next_page_'))
+async def next_page(callback_query: CallbackQuery):
+    page = int(callback_query.data.split('_')[-1])
+    votes = await rq.get_unfinished_votes(callback_query.from_user.id)
+    keyboard = kb.create_keyboard_for_change(votes, page)
+    await callback_query.message.edit_reply_markup(reply_markup=keyboard)
 
 
 @router.message(lambda message: message.text == "vo")
@@ -482,29 +499,6 @@ async def to_inline_main_menu(callback_query: CallbackQuery, state: FSMContext):
 
 
 # Обработка кнопки "Проголосовать"
-# Функция для форматирования времени в нужный формат
-def format_time_range(start_time, end_time):
-    return f"{start_time.strftime('%Y.%m.%d')}-{end_time.strftime('%Y.%m.%d')}"
-
-# Функция для форматирования оставшегося времени
-def format_remaining_time(end_time):
-    remaining_time = end_time - datetime.now()
-
-    if remaining_time.days > 365:
-        return "Более 1 года"
-    elif 30 <= remaining_time.days <= 365:
-        return "Более 1 месяца"
-    elif remaining_time.days >= 1:
-        return f"{remaining_time.days}д, {remaining_time.seconds // 3600}ч, {(remaining_time.seconds % 3600) // 60}м"
-    elif remaining_time.seconds >= 3600:
-        return f"{remaining_time.seconds // 3600}ч, {(remaining_time.seconds % 3600) // 60}м"
-    elif remaining_time.seconds > 60:
-        return f"{remaining_time.seconds // 60}м"
-    else:
-        return "До конца голосования менее минуты!"
-
-
-# Обработчик для callback-кнопки
 @router.callback_query(lambda c: c.data == 'vote')
 async def show_votes(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
@@ -518,20 +512,29 @@ async def show_votes(callback_query: CallbackQuery):
             await callback_query.answer('Нет доступных голосований.', show_alert=True)
         return
 
-    # Сортировка голосований по времени до окончания
-    sorted_votes = sorted(votes, key=lambda x: x['end_time'] - datetime.now())
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{vote['topic']}. \n{format_remaining_time(vote['end_time'])}",
-            callback_data=f"vote_{vote['id']}"
-        )] for vote in sorted_votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
-    ] + [
-        [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
-    ])
+    current_page = 0  # Начальная страница
+    keyboard = kb.create_vote_keyboard(votes, current_page)
     new_text = 'Выберите голосование из списка:'
     if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
         await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith('vote_prev_page_'))
+async def previous_vote_page(callback_query: CallbackQuery):
+    page = int(callback_query.data.split('_')[-1])
+    user_id = callback_query.from_user.id
+    votes = await rq.get_active_votes(user_id)
+    keyboard = kb.create_vote_keyboard(votes, page)
+    await callback_query.message.edit_reply_markup(reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith('vote_next_page_'))
+async def next_vote_page(callback_query: CallbackQuery):
+    page = int(callback_query.data.split('_')[-1])
+    user_id = callback_query.from_user.id
+    votes = await rq.get_active_votes(user_id)
+    keyboard = kb.create_vote_keyboard(votes, page)
+    await callback_query.message.edit_reply_markup(reply_markup=keyboard)
 
 
 # Обработка выбора голосования
@@ -676,7 +679,7 @@ async def to_inline_menu(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.message.edit_text("Возврат  в меню.", reply_markup=kb.inline_main_menu)
 
 
-# Обработчик для reply-кнопки
+# Для reply-кнопки
 @router.message(F.text == 'Проголосовать')
 async def show_votes(message: Message):
     user_id = message.from_user.id
@@ -685,15 +688,8 @@ async def show_votes(message: Message):
         await message.answer('Нет доступных голосований.', reply_markup=kb.inline_main_menu)
         return
 
-    # Сортировка голосований по времени до окончания
-    sorted_votes = sorted(votes, key=lambda x: x['end_time'] - datetime.now())
-
-    # Формируем клавиатуру с использованием format_time_range и format_remaining_time
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{vote['topic']}\n{format_remaining_time(vote['end_time'])}",
-            callback_data=f"vote_{vote['id']}"
-        )] for vote in sorted_votes if vote['end_time'] > datetime.now()  # Проверяем, что end_time больше текущего времени
+        [InlineKeyboardButton(text=vote['topic'], callback_data=f"vote_{vote['id']}")] for vote in votes
     ] + [
         [InlineKeyboardButton(text="Выход", callback_data='to_inline_menu')]
     ])
@@ -701,8 +697,9 @@ async def show_votes(message: Message):
 
 
 #Личный кабинет
-async def fetch_and_send_user_info(user_id, message):
-    user_info, areas = await rq.fetch_user_info_and_areas(user_id)
+@router.message(lambda message: message.text == "Личный кабинет")
+async def handle_reply_button(message: Message):
+    user_info, areas = await rq.fetch_user_info_and_areas(message.from_user.id)
 
     if user_info:
         user_info_text = (
@@ -719,20 +716,36 @@ async def fetch_and_send_user_info(user_id, message):
         else:
             areas_info = None
 
+        keyboard = InlineKeyboardMarkup(inline_keyboard=
+                                        [[InlineKeyboardButton(text="Выход",callback_data='to_inline_menu')]])
+
         await rq.send_user_info(message, user_info_text, areas_info)
     else:
         await message.answer("Пользователь не найден.")
 
-    # После вывода информации или ошибки добавляем клавиатуру inline_main_menu
-    await message.answer("Выберите действие:", reply_markup=kb.inline_main_menu)
 
-
-@router.message(F.text=="Личный кабинет")
+# Обработчик для inline-кнопки "Личный кабинет"
 @router.callback_query(lambda c: c.data == 'lc')
-async def handle_user_info(event):
-    if isinstance(event, Message):
-        await fetch_and_send_user_info(event.from_user.id, event)
-    elif isinstance(event, CallbackQuery):
-        await fetch_and_send_user_info(event.from_user.id, event.message)
-        await event.answer()  # Закрываем inline-кнопку без всплывающего сообщения
+async def handle_inline_button(callback_query: CallbackQuery):
+    user_info, areas = await rq.fetch_user_info_and_areas(callback_query.from_user.id)
+
+    if user_info:
+        user_info_text = (
+            f"Имя: {user_info['first_name']}\n"
+            f"Фамилия: {user_info['second_name']}\n"
+            f"Отчество: {user_info['patronymic']}\n"
+            f"Телефон: {user_info['phone_number']}\n"
+            f"Email: {user_info['email']}\n"
+            f"Уровень доступа: {'Админ' if user_info['access_level'] else 'Пользователь'}\n"
+        )
+        if areas:
+            areas_info = "\n".join(
+                [f"Адрес: {area['address']}\nКадастровый номер: {area['cadastral_number']}\n" for area in areas])
+        else:
+            areas_info = None
+
+        await rq.send_user_info(callback_query, user_info_text, areas_info)
+        await callback_query.answer()  # Закрываем inline-кнопку без всплывающего сообщения
+    else:
+        await callback_query.message.answer("Пользователь не найден.")
 

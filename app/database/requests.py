@@ -1,6 +1,7 @@
 from app.database.models import async_session
 from app.database.models import Area, User, Vote, Point, Option, Result
 from sqlalchemy.future import select
+from datetime import datetime
 
 
 async def set_telegram_id(email: str, telegram_id: int):
@@ -219,19 +220,25 @@ async def update_vote_is_finished(vote_id: int, new_value):
 
 # ГОЛОСОВАНИЕ.
 
-from sqlalchemy import select
-
-# Ваша функция get_active_votes теперь включает start_time и end_time
 async def get_active_votes(user_id):
     async with async_session() as session:
-        votes = await session.scalars(select(Vote).where((Vote.is_finished == True) & (Vote.is_in_person == False)))
+        current_time = datetime.now()
+        votes = await session.scalars(
+            select(Vote)
+            .where(
+                (Vote.is_finished == True) &
+                (Vote.start_time < current_time) &
+                (Vote.end_time > current_time) &
+                (Vote.is_in_person == False)
+            )
+        )
         active_votes = []
         for vote in votes:
             if not await has_user_completed_vote(user_id, vote.id):
                 active_votes.append({
                     'id': vote.id,
                     'topic': vote.topic,
-                    'start_time': vote.start_time,  # Добавляем start_time и end_time
+                    'start_time': vote.start_time,
                     'end_time': vote.end_time
                 })
         return active_votes

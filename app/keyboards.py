@@ -59,11 +59,11 @@ add_another_point_keyboard = InlineKeyboardMarkup(inline_keyboard=[
 
 
 # Динамическая клавиатура, отображающая кнопки-голосования
-async def create_vote_keyboard(votes: list) -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardBuilder()
-    for vote in votes:
-        keyboard.add(InlineKeyboardButton(text=vote.topic, callback_data=f"{vote.id}. {vote.topic}"))
-    return keyboard.adjust(1).as_markup()
+# async def create_vote_keyboard(votes: list) -> InlineKeyboardMarkup:
+#     keyboard = InlineKeyboardBuilder()
+#     for vote in votes:
+#         keyboard.add(InlineKeyboardButton(text=vote.topic, callback_data=f"{vote.id}. {vote.topic}"))
+#     return keyboard.adjust(1).as_markup()
 
 
 edit_vote_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -76,3 +76,55 @@ edit_vote_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Сделать голосование готовым", callback_data="edit_is_finished")],
     [InlineKeyboardButton(text="Выход", callback_data="create_vote_cancel")]
 ])
+
+
+def create_keyboard_for_change(votes, page):
+    votes_per_page = 5
+    start_idx = page * votes_per_page
+    end_idx = start_idx + votes_per_page
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=f"{vote['topic']}"
+                if 'start_time' in vote and 'end_time' in vote
+                else vote['topic'],
+                callback_data=f"edit_vote_{vote['id']}"
+            )
+        ]
+        for vote in votes[start_idx:end_idx]
+    ]
+    navigation_buttons = []
+    if page > 0:
+        navigation_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"prev_page_{page - 1}"))
+    if end_idx < len(votes):
+        navigation_buttons.append(InlineKeyboardButton(text="➡️ Вперед", callback_data=f"next_page_{page + 1}"))
+    if navigation_buttons:
+        buttons.append(navigation_buttons)
+    # Добавляем кнопку возврата в главное меню
+    buttons.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="to_inline_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def create_vote_keyboard(votes, page):
+    votes_per_page = 5
+    start_idx = page * votes_per_page
+    end_idx = start_idx + votes_per_page
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=f"{vote['topic']} ({vote['start_time'].strftime('%Y-%m-%d')} - {vote['end_time'].strftime('%Y-%m-%d')})",
+                callback_data=f"vote_{vote['id']}"
+            )
+        ]
+        for vote in votes[start_idx:end_idx]
+    ]
+    navigation_buttons = []
+    if page > 0:
+        navigation_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"vote_prev_page_{page - 1}"))
+    if end_idx < len(votes):
+        navigation_buttons.append(InlineKeyboardButton(text="➡️ Вперед", callback_data=f"vote_next_page_{page + 1}"))
+    if navigation_buttons:
+        buttons.append(navigation_buttons)
+    # Добавляем кнопку возврата в главное меню
+    buttons.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="to_inline_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
