@@ -328,6 +328,84 @@ async def send_user_info(message_or_query, user_info_text, areas_info=None):
             await message_or_query.message.edit_text(user_info_text)
 
 
+# Запрос для получения голосований с результатами
+async def get_votes_with_results(user_id):
+    async with async_session() as session:
+        current_time = datetime.now()
+        # Получаем голосования, которые удовлетворяют условиям
+        votes = await session.scalars(
+            select(Vote)
+            .where(
+                (Vote.is_finished == True) &
+                ((Vote.start_time < current_time) &
+                 (Vote.end_time > current_time) &
+                 (Vote.is_visible_in_progress == True))
+            )
+        )
+        result_votes = []
+        for vote in votes:
+            result_votes.append({
+                'id': vote.id,
+                'topic': vote.topic,
+                'start_time': vote.start_time,
+                'end_time': vote.end_time
+            })
+        return result_votes
+
+
+# Запрос для получения результатов голосования
+async def get_vote_results(vote_id):
+    async with async_session() as session:
+        points = await session.scalars(select(Point).where(Point.vote_id == vote_id))
+        results = {}
+        for point in points:
+            point_results = await session.scalars(select(Result).where(Result.point_id == point.id))
+            results[point.body] = {'yes': 0, 'no': 0, 'unsure': 0}  # Изменено на `body`
+            for result in point_results:
+                if result.option_id == 0:
+                    results[point.body]['no'] += 1
+                elif result.option_id == 1:
+                    results[point.body]['yes'] += 1
+                else:
+                    results[point.body]['unsure'] += 1
+        return results
+
+
+# Запрос для получения истории голосований пользователя
+async def get_user_vote_history(user_id):
+    async with async_session() as session:
+        # Получаем список голосований, в которых пользователь принял участие
+        user_votes = await session.scalars(
+            select(Vote)
+            .join(Point, Point.vote_id == Vote.id)
+            .join(Result, Result.point_id == Point.id)
+            .where(Result.client_id == user_id)
+            .distinct()
+        )
+
+        vote_history = []
+        for vote in user_votes:
+            vote_history.append({
+                'id': vote.id,
+                'topic': vote.topic,
+                'start_time': vote.start_time,
+                'end_time': vote.end_time
+            })
+        return vote_history
+
+
+'''Добавление смены времени не понял как должно работать
+async def update_vote_start_time(vote_id: int, new_start_time: DateTime):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(start_time=new_start_time))
+        await session.commit()
+
+async def update_vote_end_time(vote_id: int, new_end_time: date):
+    async with async_session() as session:
+        await session.execute(update(Vote).where(Vote.id == vote_id).values(end_time=new_end_time))
+        await session.commit()
+'''
+
 '''Добавление смены времени не понял как должно работать
 async def update_vote_start_time(vote_id: int, new_start_time: DateTime):
     async with async_session() as session:

@@ -264,8 +264,10 @@ async def change_vote_start(event):
     votes = await rq.get_unfinished_votes(user_id)
 
     if not votes:
-        await (event.answer if isinstance(event, CallbackQuery) else event.message.answer)(
-            'Нет доступных голосований для изменения.')
+        if isinstance(event, CallbackQuery):
+            await event.answer('Нет доступных голосований для изменения.', show_alert=True)
+        else:
+            await event.message.answer('Нет доступных голосований для изменения.')
         return
 
     current_page = 0  # Начальная страница
@@ -544,9 +546,11 @@ async def next_vote_page(callback_query: CallbackQuery):
 async def show_vote_details(callback_query: CallbackQuery, state: FSMContext):
     vote_id = int(callback_query.data.split('_')[1])
     vote_data, points = await rq.get_vote_details_with_points(vote_id)
+    access_level = await rq.get_access_level(callback_query.from_user.id)
 
     if not vote_data:
-        await callback_query.message.edit_text('Голосование не найдено.', reply_markup=kb.inline_main_menu)
+        await callback_query.message.edit_text('Голосование не найдено.',
+                                               reply_markup=await kb.check_employee_ability(access_level))
         return
 
     vote = vote_data[0]
@@ -565,7 +569,8 @@ async def show_vote_details(callback_query: CallbackQuery, state: FSMContext):
 
     # Выводим сообщение с деталями голосования и кнопкой "Продолжить"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Продолжить", callback_data='next_point')]
+        [InlineKeyboardButton(text="Продолжить", callback_data='next_point')],
+        [InlineKeyboardButton(text="В главное меню", callback_data='to_inline_menu')]
     ])
     await callback_query.message.edit_text(details, reply_markup=keyboard)
 
@@ -625,7 +630,8 @@ async def show_next_point(callback_query: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Да", callback_data='answer_yes')],
         [InlineKeyboardButton(text="Нет", callback_data='answer_no')],
-        [InlineKeyboardButton(text="Затрудняюсь ответить", callback_data='answer_uncertain')]
+        [InlineKeyboardButton(text="Воздержался", callback_data='answer_uncertain')],
+        [InlineKeyboardButton(text="Отмена голосования", callback_data='vote')]
     ])
     await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="html")
 
@@ -682,7 +688,7 @@ async def handle_answer_no(callback_query: CallbackQuery, state: FSMContext):
     await show_next_point(callback_query, state)
 
 
-# Обработка ответа "Затрудняюсь ответить"
+# Обработка ответа "Воздержался"
 @router.callback_query(lambda c: c.data == 'answer_uncertain')
 async def handle_answer_uncertain(callback_query: CallbackQuery, state: FSMContext):
     access_level = await rq.get_access_level(callback_query.from_user.id)
@@ -797,3 +803,115 @@ async def handle_inline_button(callback_query: CallbackQuery):
         await callback_query.answer()  # Закрываем inline-кнопку без всплывающего сообщения
     else:
         await callback_query.message.answer("Пользователь не найден.")
+
+
+@router.callback_query(lambda c: c.data == 'vote_history')
+async def show_vote_history(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    page = 0  # Начинаем с первой страницы
+    await show_user_vote_history(callback_query, user_id, page)
+
+
+async def show_user_vote_history(event, user_id, page):
+    vote_history = await rq.get_user_vote_history(user_id)
+    if not vote_history:
+        await (event.answer if isinstance(event, CallbackQuery) else event.message.answer)(
+            'Нет доступных голосований.')
+        return
+
+    keyboard = kb.create_history_keyboard(vote_history, page, user_id)
+    await (event.message.edit_reply_markup if isinstance(event, CallbackQuery) else event.message.answer)(
+        'История голосований:', reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data.startswith('history_prev_page_'))
+async def show_previous_page(callback_query: CallbackQuery):
+    _, _, page, user_id = callback_query.data.split('_')
+    await show_user_vote_history(callback_query, int(user_id), int(page))
+
+
+@router.callback_query(lambda c: c.data.startswith('history_next_page_'))
+async def show_next_page(callback_query: CallbackQuery):
+    _, _, page, user_id = callback_query.data.split('_')
+    await show_user_vote_history(callback_query, int(user_id), int(page))
+
+
+@router.callback_query(lambda c: c.data.startswith('history_vote_'))
+async def show_history_vote_results(callback_query: CallbackQuery):
+    vote_id = int(callback_query.data.split('_')[2])
+    results = await rq.get_vote_results(vote_id)
+
+    result_text = "Результаты голосования:\n\n"
+    for point, result in results.items():
+        result_text += f"{point}:\n"
+        result_text += f"  Да: {result['yes']} голосов\n"
+        result_text += f"  Нет: {result['no']} голосов\n"
+        result_text += f"  Затрудняюсь ответить: {result['unsure']} голосов\n\n"
+
+    access_level = await rq.get_access_level(callback_query.from_user.id)
+    if access_level:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🏠 Главное меню", callback_data="to_inline_menu")]])
+    else:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🏠 Главное меню", callback_data="to_inline_menu_sub")]])
+
+    await callback_query.message.edit_text(result_text, reply_markup=keyboard)
+
+
+# Обработка кнопки "Результаты голосований"
+@router.callback_query(lambda c: c.data == 'results')
+async def show_results(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    votes = await rq.get_votes_with_results(user_id)
+
+    if not votes:
+        await callback_query.message.edit_text('Нет доступных голосований.',
+                                               reply_markup=await kb.check_employee(user_id))
+        return
+
+    current_page = 0
+    keyboard = kb.create_results_keyboard(votes, current_page)
+    await callback_query.message.edit_text('Результаты голосований:', reply_markup=keyboard)
+
+
+# Обработка перехода по страницам результатов голосований
+@router.callback_query(lambda c: c.data.startswith('results_'))
+async def paginate_results(callback_query: CallbackQuery):
+    query_data = callback_query.data.split('_')
+    action = query_data[1]
+    page = int(query_data[2])
+
+    user_id = callback_query.from_user.id
+    votes = await rq.get_votes_with_results(user_id)
+
+    if not votes:
+        await callback_query.message.edit_text('Нет доступных голосований.',
+                                               reply_markup=await kb.check_employee(user_id))
+        return
+
+    if action == 'prev_page':
+        page -= 1
+    elif action == 'next_page':
+        page += 1
+
+    keyboard = kb.create_results_keyboard(votes, page)
+    await callback_query.message.edit_text('Результаты голосований:', reply_markup=keyboard)
+
+
+# Обработка выбора конкретного голосования для показа результатов
+@router.callback_query(lambda c: c.data.startswith('result_'))
+async def show_vote_results(callback_query: CallbackQuery):
+    vote_id = int(callback_query.data.split('_')[1])
+    results = await rq.get_vote_results(vote_id)
+
+    result_text = "Результаты голосования:\n\n"
+    for point, result in results.items():
+        result_text += f"{point}\n"
+        result_text += f"Да: {result['yes']} голосов\n"
+        result_text += f"Нет: {result['no']} голосов\n"
+        result_text += f"Воздержался: {result['unsure']} голосов\n\n"
+
+    await callback_query.message.edit_text(result_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="to_inline_menu")]
+    ]))
