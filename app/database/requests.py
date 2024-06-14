@@ -406,14 +406,3 @@ async def update_vote_end_time(vote_id: int, new_end_time: date):
         await session.commit()
 '''
 
-'''Добавление смены времени не понял как должно работать
-async def update_vote_start_time(vote_id: int, new_start_time: DateTime):
-    async with async_session() as session:
-        await session.execute(update(Vote).where(Vote.id == vote_id).values(start_time=new_start_time))
-        await session.commit()
-
-async def update_vote_end_time(vote_id: int, new_end_time: date):
-    async with async_session() as session:
-        await session.execute(update(Vote).where(Vote.id == vote_id).values(end_time=new_end_time))
-        await session.commit()
-'''
